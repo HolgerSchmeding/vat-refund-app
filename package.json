@@ -1,5 +1,33 @@
 {
+  "name": "vat-refund-app",
+  "version": "1.0.0",
+  "description": "Firebase-based VAT refund application with line-item validation",
+  "main": "index.js",
+  "scripts": {
+    "start": "firebase emulators:start",
+    "deploy": "firebase deploy",
+    "deploy:functions": "firebase deploy --only functions",
+    "build": "cd functions && npm run build",
+    "test": "node test-complete-workflow.js",
+    "test:validation": "node test-manual-validation.js",
+    "logs": "firebase functions:log",
+    "clean": "cd functions && rm -rf lib node_modules && npm install"
+  },
+  "keywords": [
+    "vat",
+    "refund",
+    "firebase",
+    "document-ai",
+    "typescript",
+    "eu-compliance"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "firebase-admin": "^13.4.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
