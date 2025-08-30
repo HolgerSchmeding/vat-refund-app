@@ -66,6 +66,7 @@ export interface Document {
     "ready_for_submission" | "in_submission" | "submitted";
   originalFileName: string;
   storagePath: string;
+  country?: string; // Country code where the expense occurred (e.g., "DE")
   createdAt: Timestamp;
   updatedAt: Timestamp;
   errorDetails?: ErrorDetails; // optional
@@ -75,6 +76,7 @@ export interface Document {
   validationCompletedAt?: Timestamp; // when validation was completed
   validatedData?: Record<string, unknown>; // optional
   submissionId?: string; // foreign key to submissions, optional
+  validationError?: string; // Error message if validation failed
 }
 
 /**
@@ -99,5 +101,38 @@ export interface Submission {
   totalRefundAmount: number;
   xmlStoragePath: string;
   documentCount: number;
+  documentIds?: string[]; // Array of document IDs included in this submission
   createdAt: Timestamp;
+}
+
+/**
+ * Parameters for generateSubmissionXml function
+ */
+export interface GenerateSubmissionXmlParams {
+  submissionPeriod: string; // e.g., "Q4/2025"
+  countryCode: string; // e.g., "DE"
+  tenantId?: string; // Optional tenant ID for multi-tenant support
+}
+
+/**
+ * Response from generateSubmissionXml function
+ */
+export interface GenerateSubmissionXmlResponse {
+  success: boolean;
+  xmlStoragePath?: string;
+  submissionId?: string;
+  totalRefundAmount?: number;
+  documentCount?: number;
+  error?: string;
+}
+
+/**
+ * Aggregated data by EU sub-code for XML generation
+ */
+export interface EuSubCodeAggregate {
+  subCode: string;
+  totalNetAmount: number;
+  totalVatAmount: number;
+  totalRefundableVatAmount: number;
+  documentCount: number;
 }

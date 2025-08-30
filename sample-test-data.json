@@ -1,0 +1,141 @@
+{
+  "sampleDocuments": [
+    {
+      "tenantId": "test-tenant-123",
+      "uploadedBy": "test-user-456",
+      "status": "ready_for_submission",
+      "originalFileName": "hotel-receipt-berlin.pdf",
+      "storagePath": "documents/test-tenant-123/hotel-receipt-berlin.pdf",
+      "country": "DE",
+      "createdAt": "2025-10-15T10:30:00Z",
+      "updatedAt": "2025-10-15T11:00:00Z",
+      "extractedData": {
+        "vendorName": "Hotel Adlon Berlin",
+        "date": "2025-10-14",
+        "totalAmount": 250.00
+      },
+      "lineItems": [
+        {
+          "originalText": "Hotel accommodation 2 nights € 200.00 19% VAT € 38.00",
+          "description": "Hotel accommodation 2 nights",
+          "netAmount": 200.00,
+          "vatRate": 19,
+          "vatAmount": 38.00,
+          "totalAmount": 238.00,
+          "isRefundable": true,
+          "refundableVatAmount": 38.00,
+          "euSubCode": "55.10.10",
+          "validationNotes": "Business accommodation is refundable"
+        },
+        {
+          "originalText": "City tax € 12.00",
+          "description": "City tax",
+          "netAmount": 12.00,
+          "vatRate": 0,
+          "vatAmount": 0,
+          "totalAmount": 12.00,
+          "isRefundable": false,
+          "refundableVatAmount": 0,
+          "euSubCode": null,
+          "validationNotes": "City tax is not refundable"
+        }
+      ],
+      "totalRefundableVatAmount": 38.00,
+      "validationCompletedAt": "2025-10-15T11:00:00Z"
+    },
+    {
+      "tenantId": "test-tenant-123",
+      "uploadedBy": "test-user-456",
+      "status": "ready_for_submission",
+      "originalFileName": "restaurant-receipt-munich.pdf",
+      "storagePath": "documents/test-tenant-123/restaurant-receipt-munich.pdf",
+      "country": "DE",
+      "createdAt": "2025-11-20T18:45:00Z",
+      "updatedAt": "2025-11-20T19:00:00Z",
+      "extractedData": {
+        "vendorName": "Restaurant Bayern",
+        "date": "2025-11-20",
+        "totalAmount": 95.20
+      },
+      "lineItems": [
+        {
+          "originalText": "Business dinner € 80.00 19% VAT € 15.20",
+          "description": "Business dinner",
+          "netAmount": 80.00,
+          "vatRate": 19,
+          "vatAmount": 15.20,
+          "totalAmount": 95.20,
+          "isRefundable": true,
+          "refundableVatAmount": 15.20,
+          "euSubCode": "56.10.11",
+          "validationNotes": "Business meals are refundable"
+        }
+      ],
+      "totalRefundableVatAmount": 15.20,
+      "validationCompletedAt": "2025-11-20T19:00:00Z"
+    },
+    {
+      "tenantId": "test-tenant-123",
+      "uploadedBy": "test-user-456",
+      "status": "ready_for_submission",
+      "originalFileName": "fuel-receipt-autobahn.pdf",
+      "storagePath": "documents/test-tenant-123/fuel-receipt-autobahn.pdf",
+      "country": "DE",
+      "createdAt": "2025-12-05T14:20:00Z",
+      "updatedAt": "2025-12-05T14:30:00Z",
+      "extractedData": {
+        "vendorName": "Shell Autobahn Service",
+        "date": "2025-12-05",
+        "totalAmount": 71.40
+      },
+      "lineItems": [
+        {
+          "originalText": "Fuel 50L € 60.00 19% VAT € 11.40",
+          "description": "Fuel 50L",
+          "netAmount": 60.00,
+          "vatRate": 19,
+          "vatAmount": 11.40,
+          "totalAmount": 71.40,
+          "isRefundable": true,
+          "refundableVatAmount": 11.40,
+          "euSubCode": "47.30.20",
+          "validationNotes": "Business fuel is refundable"
+        }
+      ],
+      "totalRefundableVatAmount": 11.40,
+      "validationCompletedAt": "2025-12-05T14:30:00Z"
+    }
+  ],
+  "expectedXmlResult": {
+    "totalRefundAmount": 64.60,
+    "documentCount": 3,
+    "euSubCodeBreakdown": {
+      "55.10.10": {
+        "description": "Hotel accommodation",
+        "totalRefundableVat": 38.00,
+        "documentCount": 1
+      },
+      "56.10.11": {
+        "description": "Restaurant services",
+        "totalRefundableVat": 15.20,
+        "documentCount": 1
+      },
+      "47.30.20": {
+        "description": "Fuel",
+        "totalRefundableVat": 11.40,
+        "documentCount": 1
+      }
+    }
+  },
+  "instructions": [
+    "1. Start Firebase emulators: firebase emulators:start",
+    "2. Add the sample documents above to your Firestore 'documents' collection",
+    "3. Call the generateSubmissionXml function with parameters:",
+    "   - submissionPeriod: 'Q4/2025'",
+    "   - countryCode: 'DE'",
+    "   - tenantId: 'test-tenant-123'",
+    "4. The function should generate an XML file and return the storage path",
+    "5. Check the 'submissions' collection for the new submission record",
+    "6. Verify that document statuses changed to 'in_submission'"
+  ]
+}

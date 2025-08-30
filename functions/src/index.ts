@@ -1,10 +1,12 @@
 import {onObjectFinalized} from "firebase-functions/v2/storage";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {DocumentProcessorServiceClient} from "@google-cloud/documentai";
 import {initializeApp} from "firebase-admin/app";
 import {getStorage} from "firebase-admin/storage";
 import {getFirestore} from "firebase-admin/firestore";
+import {create} from "xmlbuilder2";
 
 // Initialize Firebase Admin SDK
 initializeApp();
@@ -457,3 +459,270 @@ export const validateDocument = onDocumentCreated(
     }
   }
 );
+
+/**
+ * Cloud Function to generate XML submission for German tax authorities
+ * This is a callable function that can be triggered from the frontend
+ */
+export const generateSubmissionXml = onCall(
+  {region: "europe-west1"},
+  async (request) => {
+    try {
+      const {submissionPeriod, countryCode, tenantId} = request.data;
+
+      // Validate input parameters
+      if (!submissionPeriod || !countryCode) {
+        throw new Error("Missing required parameters: submissionPeriod and countryCode");
+      }
+
+      if (countryCode !== "DE") {
+        throw new Error("Currently only German (DE) submissions are supported");
+      }
+
+      logger.info(`Generating XML submission for period ${submissionPeriod}, country ${countryCode}`);
+
+      const firestore = getFirestore();
+      const storage = getStorage();
+
+      // Build query for ready-for-submission documents
+      let query = firestore.collection("documents")
+        .where("status", "==", "ready_for_submission")
+        .where("country", "==", countryCode);
+
+      // Add tenant filter if provided (for multi-tenant support)
+      if (tenantId) {
+        query = query.where("tenantId", "==", tenantId);
+      }
+
+      // Execute query
+      const querySnapshot = await query.get();
+
+      if (querySnapshot.empty) {
+        throw new Error(`No ready-for-submission documents found for period ${submissionPeriod} and country ${countryCode}`);
+      }
+
+      // Filter documents by period and aggregate data by EU sub-code
+      const euSubCodeAggregates = new Map<string, {
+        subCode: string;
+        totalNetAmount: number;
+        totalVatAmount: number;
+        totalRefundableVatAmount: number;
+        documentCount: number;
+      }>();
+
+      let totalRefundAmount = 0;
+      let matchingDocuments = 0;
+      const documentIds: string[] = [];
+
+      querySnapshot.forEach((doc) => {
+        const docData = doc.data();
+        const docId = doc.id;
+
+        // Filter by period (you may need to adjust this logic based on how period is stored)
+        // For now, assuming period is part of document metadata or can be derived from dates
+        const createdAt = docData.createdAt?.toDate();
+        if (!createdAt || !isDocumentInPeriod(createdAt, submissionPeriod)) {
+          return; // Skip this document
+        }
+
+        matchingDocuments++;
+        documentIds.push(docId);
+
+        // Process line items
+        const lineItems = docData.lineItems || [];
+        lineItems.forEach((item: any) => {
+          if (item.isRefundable && item.euSubCode && item.refundableVatAmount > 0) {
+            const subCode = item.euSubCode;
+            
+            if (!euSubCodeAggregates.has(subCode)) {
+              euSubCodeAggregates.set(subCode, {
+                subCode,
+                totalNetAmount: 0,
+                totalVatAmount: 0,
+                totalRefundableVatAmount: 0,
+                documentCount: 0
+              });
+            }
+
+            const aggregate = euSubCodeAggregates.get(subCode)!;
+            aggregate.totalNetAmount += item.netAmount || 0;
+            aggregate.totalVatAmount += item.vatAmount || 0;
+            aggregate.totalRefundableVatAmount += item.refundableVatAmount || 0;
+            aggregate.documentCount++;
+
+            totalRefundAmount += item.refundableVatAmount || 0;
+          }
+        });
+      });
+
+      if (matchingDocuments === 0) {
+        throw new Error(`No documents found for the specified period ${submissionPeriod}`);
+      }
+
+      if (totalRefundAmount === 0) {
+        throw new Error("No refundable VAT amounts found in the selected documents");
+      }
+
+      // Generate XML according to German UStVEU schema
+      const xmlContent = generateGermanVatXml(
+        Array.from(euSubCodeAggregates.values()),
+        submissionPeriod,
+        totalRefundAmount,
+        tenantId || "default-tenant"
+      );
+
+      // Generate unique filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `VAT-Submission-${countryCode}-${submissionPeriod}-${timestamp}.xml`;
+      const storagePath = `submissions/${fileName}`;
+
+      // Upload XML to Cloud Storage
+      const bucket = storage.bucket();
+      const file = bucket.file(storagePath);
+      
+      await file.save(xmlContent, {
+        metadata: {
+          contentType: "application/xml",
+          metadata: {
+            submissionPeriod,
+            countryCode,
+            tenantId: tenantId || "default-tenant",
+            documentCount: matchingDocuments.toString(),
+            totalRefundAmount: totalRefundAmount.toString(),
+            generatedAt: new Date().toISOString()
+          }
+        }
+      });
+
+      // Create submission record in Firestore
+      const submissionData = {
+        tenantId: tenantId || "default-tenant",
+        country: countryCode,
+        period: submissionPeriod,
+        status: "generated",
+        totalRefundAmount,
+        xmlStoragePath: storagePath,
+        documentCount: matchingDocuments,
+        documentIds,
+        createdAt: new Date()
+      };
+
+      const submissionRef = await firestore.collection("submissions").add(submissionData);
+      const submissionId = submissionRef.id;
+
+      // Update processed documents with submission reference
+      const batch = firestore.batch();
+      documentIds.forEach((docId) => {
+        const docRef = firestore.collection("documents").doc(docId);
+        batch.update(docRef, {
+          status: "in_submission",
+          submissionId,
+          updatedAt: new Date()
+        });
+      });
+      await batch.commit();
+
+      logger.info(
+        `XML submission generated successfully. ` +
+        `Submission ID: ${submissionId}, ` +
+        `Documents processed: ${matchingDocuments}, ` +
+        `Total refund amount: €${totalRefundAmount.toFixed(2)}`
+      );
+
+      return {
+        success: true,
+        xmlStoragePath: storagePath,
+        submissionId,
+        totalRefundAmount,
+        documentCount: matchingDocuments
+      };
+
+    } catch (error) {
+      logger.error("Error generating XML submission:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error occurred"
+      };
+    }
+  }
+);
+
+/**
+ * Helper function to check if a document falls within the specified period
+ */
+function isDocumentInPeriod(documentDate: Date, period: string): boolean {
+  // Parse period like "Q4/2025" or "2025-Q4"
+  const year = parseInt(period.match(/\d{4}/)?.[0] || "0");
+  const quarterMatch = period.match(/Q([1-4])/);
+  
+  if (!year || !quarterMatch) {
+    // Fallback: assume current year if period format is unclear
+    return true;
+  }
+
+  const quarter = parseInt(quarterMatch[1]);
+  const docYear = documentDate.getFullYear();
+  const docMonth = documentDate.getMonth() + 1; // 1-based month
+  
+  // Determine quarter from month
+  const docQuarter = Math.ceil(docMonth / 3);
+  
+  return docYear === year && docQuarter === quarter;
+}
+
+/**
+ * Generate German VAT XML according to UStVEU schema
+ */
+function generateGermanVatXml(
+  aggregates: Array<{
+    subCode: string;
+    totalNetAmount: number;
+    totalVatAmount: number;
+    totalRefundableVatAmount: number;
+    documentCount: number;
+  }>,
+  period: string,
+  totalRefundAmount: number,
+  tenantId: string
+): string {
+  // Create XML document with German UStVEU structure
+  const xml = create({version: "1.0", encoding: "UTF-8"})
+    .ele("UStVEU")
+    .att("version", "2024")
+    .att("xmlns", "http://www.elster.de/elsterxml/schema/v11")
+    .att("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
+
+  // Header information
+  const header = xml.ele("Header");
+  header.ele("Testmerker").txt("N"); // N = Production, J = Test
+  header.ele("Hersteller").txt("VAT-Refund-App");
+  header.ele("DatenArt").txt("UStVEU");
+  header.ele("Verfahren").txt("UStVEU");
+  header.ele("Zeitraum").txt(period);
+
+  // Applicant data (this would normally come from tenant information)
+  const applicant = xml.ele("Antragsteller");
+  applicant.ele("TenantId").txt(tenantId);
+  applicant.ele("Period").txt(period);
+  applicant.ele("Country").txt("DE");
+
+  // VAT details grouped by EU sub-codes
+  const vatDetails = xml.ele("UmsatzsteuerDetails");
+  
+  aggregates.forEach((aggregate) => {
+    const item = vatDetails.ele("Position");
+    item.ele("EUSubCode").txt(aggregate.subCode);
+    item.ele("NettoSumme").txt(aggregate.totalNetAmount.toFixed(2));
+    item.ele("UmsatzsteuerSumme").txt(aggregate.totalVatAmount.toFixed(2));
+    item.ele("ErstattungsberechtigterBetrag").txt(aggregate.totalRefundableVatAmount.toFixed(2));
+    item.ele("AnzahlBelege").txt(aggregate.documentCount.toString());
+  });
+
+  // Summary
+  const summary = xml.ele("Zusammenfassung");
+  summary.ele("GesamtErstattungsbetrag").txt(totalRefundAmount.toFixed(2));
+  summary.ele("AnzahlPositionen").txt(aggregates.length.toString());
+  summary.ele("Erstellungsdatum").txt(new Date().toISOString());
+
+  return xml.end({prettyPrint: true});
+}
