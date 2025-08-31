@@ -1,11 +1,13 @@
 import type { Document } from '../types';
+import { DocumentStatus } from '../types/DocumentStatus';
 import { 
   FileText, 
   Clock, 
   CheckCircle, 
   XCircle, 
   AlertTriangle,
-  Loader
+  Loader,
+  Mail
 } from 'lucide-react';
 import './DocumentList.css';
 
@@ -32,18 +34,20 @@ function DocumentList({ documents }: DocumentListProps) {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'uploading':
+      case DocumentStatus.UPLOADING:
         return <Loader className="status-icon uploading" size={16} />;
-      case 'pending_validation':
+      case DocumentStatus.AWAITING_VALIDATION:
         return <Clock className="status-icon pending" size={16} />;
-      case 'validation_error':
+      case DocumentStatus.VALIDATION_ERROR:
         return <XCircle className="status-icon error" size={16} />;
-      case 'ready_for_submission':
+      case DocumentStatus.READY_FOR_SUBMISSION:
         return <CheckCircle className="status-icon success" size={16} />;
-      case 'in_submission':
+      case DocumentStatus.SUBMITTING:
         return <AlertTriangle className="status-icon warning" size={16} />;
-      case 'submitted':
+      case DocumentStatus.SUBMITTED:
         return <CheckCircle className="status-icon submitted" size={16} />;
+      case DocumentStatus.ADDRESS_CORRECTION_REQUESTED:
+        return <Mail className="status-icon correction" size={16} />;
       default:
         return <FileText className="status-icon" size={16} />;
     }
@@ -51,24 +55,27 @@ function DocumentList({ documents }: DocumentListProps) {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'uploading':
+      case DocumentStatus.UPLOADING:
         return 'Uploading';
-      case 'pending_validation':
+      case DocumentStatus.AWAITING_VALIDATION:
         return 'Pending Validation';
-      case 'validation_error':
+      case DocumentStatus.VALIDATION_ERROR:
         return 'Validation Error';
-      case 'ready_for_submission':
+      case DocumentStatus.READY_FOR_SUBMISSION:
         return 'Ready for Submission';
-      case 'in_submission':
+      case DocumentStatus.SUBMITTING:
         return 'In Submission';
-      case 'submitted':
+      case DocumentStatus.SUBMITTED:
         return 'Submitted';
+      case DocumentStatus.ADDRESS_CORRECTION_REQUESTED:
+        return 'Correction Requested';
       default:
         return status;
     }
   };
 
-  const getVendorName = (extractedData: Record<string, unknown>) => {
+  const getVendorName = (extractedData: Record<string, unknown> | undefined | null) => {
+    if (!extractedData) return 'Unknown Vendor';
     // Try to extract vendor name from various possible fields
     return (extractedData.vendorName || 
             extractedData.supplierName || 
@@ -76,8 +83,16 @@ function DocumentList({ documents }: DocumentListProps) {
             'Unknown Vendor') as string;
   };
 
-  const getTotalAmount = (extractedData: Record<string, unknown>) => {
-    return (extractedData.totalAmount || 0) as number;
+  const getTotalAmount = (extractedData: Record<string, unknown> | undefined | null) => {
+    if (!extractedData) return 0;
+    const raw = extractedData.totalAmount as any;
+    if (typeof raw === 'number') return raw;
+    if (typeof raw === 'string') {
+      const cleaned = raw.replace(/[€$£\s]/g, '').replace(/\./g, '').replace(/,/g, '.');
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
   };
 
   return (
@@ -93,7 +108,11 @@ function DocumentList({ documents }: DocumentListProps) {
         </div>
         
         <div className="table-body">
-          {documents.map((document) => (
+          {documents.map((document) => {
+            // Defensive defaults
+            const extracted = (document as any).extractedData || (document as any).extracted_data || null;
+            const createdAt = (document as any).createdAt;
+            return (
             <div key={document.id} className="table-row">
               <div className="col-filename">
                 <div className="filename-cell">
@@ -106,19 +125,19 @@ function DocumentList({ documents }: DocumentListProps) {
               
               <div className="col-vendor">
                 <span className="vendor-name">
-                  {getVendorName(document.extractedData)}
+                  {getVendorName(extracted)}
                 </span>
               </div>
               
               <div className="col-date">
                 <span className="date">
-                  {formatDate(document.createdAt)}
+                  {formatDate(createdAt)}
                 </span>
               </div>
               
               <div className="col-amount">
                 <span className="amount">
-                  {formatCurrency(getTotalAmount(document.extractedData))}
+                  {formatCurrency(getTotalAmount(extracted))}
                 </span>
               </div>
               
@@ -146,7 +165,8 @@ function DocumentList({ documents }: DocumentListProps) {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

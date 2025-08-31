@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import type { Document, Submission, DashboardMetrics } from '../types';
+import { DocumentStatus } from '../types/DocumentStatus';
 import { useAuth } from './useAuth';
 
 /**
@@ -123,10 +124,10 @@ export function useDashboardMetrics() {
     const newMetrics: DashboardMetrics = {
       totalDocuments: documents.length,
       documentsAwaitingValidation: documents.filter(d => 
-        d.status === 'pending_validation' || d.status === 'uploading'
+        d.status === DocumentStatus.AWAITING_VALIDATION || d.status === DocumentStatus.UPLOADING
       ).length,
       documentsReadyForSubmission: documents.filter(d => 
-        d.status === 'ready_for_submission'
+        d.status === DocumentStatus.READY_FOR_SUBMISSION
       ).length,
       totalExpectedRefund: documents.reduce((sum, doc) => 
         sum + (doc.totalRefundableVatAmount || 0), 0

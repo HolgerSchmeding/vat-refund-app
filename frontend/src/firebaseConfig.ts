@@ -9,9 +9,9 @@ import { getStorage, connectStorageEmulator } from 'firebase/storage';
 // For development with emulators, these can be placeholder values
 const firebaseConfig = {
   apiKey: "demo-api-key",
-  authDomain: "eu-vat-refund-app-2025.firebaseapp.com",
-  projectId: "eu-vat-refund-app-2025",
-  storageBucket: "eu-vat-refund-app-2025.appspot.com",
+  authDomain: "demo-vat-refund-app.firebaseapp.com",
+  projectId: "demo-vat-refund-app",
+  storageBucket: "demo-vat-refund-app.appspot.com",
   messagingSenderId: "123456789",
   appId: "1:123456789:web:demo-app-id"
 };

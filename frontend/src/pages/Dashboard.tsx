@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useDocuments, useSubmissions, useDashboardMetrics } from '../hooks/useFirestore';
+import { DocumentStatus } from '../types/DocumentStatus';
 import { 
   LogOut, 
   FileText, 
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import DocumentList from '../components/DocumentList';
 import SubmissionGenerator from '../components/SubmissionGenerator';
+import InvoiceUploader from '../components/InvoiceUploader';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -38,15 +40,15 @@ export default function Dashboard() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'ready_for_submission':
+      case DocumentStatus.READY_FOR_SUBMISSION:
         return 'success';
-      case 'pending_validation':
-      case 'uploading':
+      case DocumentStatus.AWAITING_VALIDATION:
+      case DocumentStatus.UPLOADING:
         return 'warning';
-      case 'validation_error':
+      case DocumentStatus.VALIDATION_ERROR:
         return 'error';
-      case 'in_submission':
-      case 'submitted':
+      case DocumentStatus.SUBMITTING:
+      case DocumentStatus.SUBMITTED:
         return 'info';
       default:
         return 'default';
@@ -148,6 +150,9 @@ export default function Dashboard() {
                   <h3>Your Documents</h3>
                   <p>Track the status of your uploaded invoices and receipts</p>
                 </div>
+                
+                {/* Invoice Upload Section */}
+                <InvoiceUploader />
                 
                 {documentsLoading ? (
                   <div className="loading-state">

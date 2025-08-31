@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  firebase-emulators:
+    # Baut das Image basierend auf unserer Dockerfile
+    build: .
+    # Verknüpft unseren lokalen Code-Ordner mit dem Ordner im Container
+    # Code-Änderungen auf Ihrem PC werden sofort im Container wirksam
+    volumes:
+      - ./functions:/app/functions
+      - ./storage.rules:/app/storage.rules
+      - ./firestore.rules:/app/firestore.rules
+      - ./firebase.json:/app/firebase.json
+      - ./emulator-data:/app/emulator-data
+    # Mappt die Ports vom Container auf Ihren PC (container:host)
+    # So können Sie über localhost:5174 etc. darauf zugreifen
+    ports:
+      - "4300:4300" # Emulator UI (angepasster Port)
+      - "5001:5001" # Functions
+      - "8080:8080" # Firestore
+      - "9199:9199" # Storage
+      - "9099:9099" # Auth
+    # Stellt sicher, dass der Container für interaktive Sessions offen bleibt
+    stdin_open: true
+    tty: true
+    # Umgebungsvariablen für bessere Emulator-Performance
+    environment:
+      - FUNCTIONS_EMULATOR_HOST=0.0.0.0
+      - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
+      - FIREBASE_AUTH_EMULATOR_HOST=0.0.0.0:9099

@@ -63,7 +63,7 @@ export interface Document {
   tenantId: string;
   uploadedBy: string; // foreign key to users
   status: "uploading" | "pending_validation" | "validation_error" |
-    "ready_for_submission" | "in_submission" | "submitted";
+    "ready_for_submission" | "in_submission" | "submitted" | "in_correction_address";
   originalFileName: string;
   storagePath: string;
   country?: string; // Country code where the expense occurred (e.g., "DE")

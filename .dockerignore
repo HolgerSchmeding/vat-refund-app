@@ -1,0 +1,11 @@
+# Docker artifacts
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Emulator data
+emulator-data/
+
+# Build artifacts
+functions/lib/
+functions/node_modules/

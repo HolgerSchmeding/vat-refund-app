@@ -2,175 +2,100 @@ import {onObjectFinalized} from "firebase-functions/v2/storage";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {DocumentProcessorServiceClient} from "@google-cloud/documentai";
-import {initializeApp} from "firebase-admin/app";
-import {getStorage} from "firebase-admin/storage";
-import {getFirestore} from "firebase-admin/firestore";
+import {FieldValue} from "firebase-admin/firestore";
 import {create} from "xmlbuilder2";
 
-// Initialize Firebase Admin SDK
-initializeApp();
+// Import centralized configuration and client factories
+import { validateConfig } from "./config/env";
+import {getAdminStorage, getAdminFirestore, getDocAiClient, getConfig} from "./config/clients";
 
-// --- Configuration ---
-// IMPORTANT: Replace with your actual project details
-const GcpProject = "eu-vat-refund-app-2025";
-const GcpLocation = "eu"; // e.g., 'eu' or 'us'
-// The ID of your Document AI Invoice Parser
-const ProcessorId = "b334b6308b8afcb6";
+// Import structured logging
+import { createLogger, LogHelpers } from "./utils/logger";
 
-// Initialize the Document AI client
-const clientOptions = {
-  apiEndpoint: "eu-documentai.googleapis.com",
-};
-const docAiClient = new DocumentProcessorServiceClient(clientOptions);
+// Import typed status enums
+import { DocumentStatus } from "./types/DocumentStatus";
 
-// --- Helper Functions ---
+// Import modular parsers and rules
+import { 
+  parseDocumentAIEntities, 
+  type DocumentAIResponse 
+} from "./parsers/documentParser";
+import { applyRefundabilityRules } from "./rules/refundabilityRules";
 
-/**
- * Parse a line item text to extract structured data
- */
-function parseLineItem(text: string) {
-  // Basic parsing logic - in production, this would be more sophisticated
-  const result = {
-    description: text,
-    netAmount: 0,
-    vatRate: 0,
-    vatAmount: 0,
-    totalAmount: 0
-  };
-
-  // Extract amounts using regex patterns
-  const amountPattern = /€(\d+\.?\d*)/g;
-  const amounts = [...text.matchAll(amountPattern)].map(match => 
-    parseFloat(match[1])
-  );
-
-  // Extract VAT rate
-  const vatRatePattern = /(\d+)%\s*VAT/i;
-  const vatMatch = text.match(vatRatePattern);
-  if (vatMatch) {
-    result.vatRate = parseInt(vatMatch[1]);
-  }
-
-  // Simple heuristic: if we have amounts, assume first is net, calculate VAT
-  if (amounts.length > 0) {
-    result.netAmount = amounts[0];
-    if (result.vatRate > 0) {
-      result.vatAmount = result.netAmount * (result.vatRate / 100);
-      result.totalAmount = result.netAmount + result.vatAmount;
-    }
-  }
-
-  // Extract description (everything before the first amount)
-  const firstAmountIndex = text.indexOf("€");
-  if (firstAmountIndex > 0) {
-    result.description = text.substring(0, firstAmountIndex).trim();
-  }
-
-  return result;
+// Validate configuration on module load
+try {
+  validateConfig();
+  logger.info("✅ Configuration validation passed");
+} catch (error) {
+  logger.error("❌ Configuration validation failed:", error);
+  throw error;
 }
 
-/**
- * Check if a line item description is refundable based on EU VAT rules
- */
-function isRefundableItem(description: string): {
-  isRefundable: boolean;
-  euSubCode: string | null;
-  reason: string;
-} {
-  const desc = description.toLowerCase();
+export const onInvoiceUpload = onObjectFinalized(
+  {
+    cpu: 1,
+    bucket: "demo-vat-refund-app.appspot.com"
+  }, 
+  async (event) => {
+    // Create structured logger with correlation ID
+    const logContext = LogHelpers.createStorageContext(event.data.name, event.data.bucket);
+    const structuredLogger = createLogger("onInvoiceUpload", logContext);
+    const timing = structuredLogger.startFunction({
+      contentType: event.data.contentType,
+      size: event.data.size
+    });
 
-  // Non-refundable items
-  if (desc.includes("alcohol") || desc.includes("wine") || desc.includes("beer")) {
-    return {
-      isRefundable: false,
-      euSubCode: null,
-      reason: "Alcohol products are not eligible for VAT refund"
-    };
-  }
+    try {
+      structuredLogger.info("Invoice upload detected", {
+        contentType: event.data.contentType,
+        size: event.data.size
+      });
+      
+      const fileBucket = event.data.bucket;
+      const filePath = event.data.name;
+      const contentType = event.data.contentType;
 
-  if (desc.includes("entertainment") || desc.includes("gift")) {
-    return {
-      isRefundable: false,
-      euSubCode: null,
-      reason: "Entertainment and gifts are not eligible for VAT refund"
-    };
-  }
+      // Only process files in the invoices directory
+      if (!filePath.startsWith('invoices/')) {
+        structuredLogger.info("File outside invoices directory - ignoring", { reason: "not_in_invoices_dir" });
+        structuredLogger.endFunction(timing.startTime);
+        return;
+      }
 
-  // Refundable items with EU sub-codes
-  if (desc.includes("hotel") || desc.includes("accommodation")) {
-    return {
-      isRefundable: true,
-      euSubCode: "55.10.10", // Hotel accommodation
-      reason: "Business accommodation is refundable"
-    };
-  }
+      // 1. Validate the file type
+      const validTypes = ["application/pdf", "image/jpeg", "image/png"];
+      if (!contentType || !validTypes.includes(contentType)) {
+        structuredLogger.warn("Invalid file type - halting execution", { 
+          contentType,
+          validTypes,
+          reason: "invalid_content_type"
+        });
+        structuredLogger.endFunction(timing.startTime);
+        return;
+      }
+      
+      structuredLogger.step("File validation passed - starting processing");
 
-  if (desc.includes("meal") || desc.includes("restaurant") || desc.includes("food")) {
-    return {
-      isRefundable: true,
-      euSubCode: "56.10.11", // Restaurant services
-      reason: "Business meals are refundable"
-    };
-  }
+      // 2. Fetch file content from Storage
+      structuredLogger.step("Downloading file from storage");
 
-  if (desc.includes("fuel") || desc.includes("petrol") || desc.includes("gas")) {
-    return {
-      isRefundable: true,
-      euSubCode: "47.30.20", // Fuel
-      reason: "Business fuel is refundable"
-    };
-  }
+      // Begin processing (download + Document AI)
+      const storage = getAdminStorage();
+      const bucket = storage.bucket(fileBucket);
+      const file = bucket.file(filePath);
 
-  if (desc.includes("conference") || desc.includes("training") || desc.includes("seminar")) {
-    return {
-      isRefundable: true,
-      euSubCode: "85.59.12", // Business training
-      reason: "Business training and conferences are refundable"
-    };
-  }
+      // Download the file content as a buffer
+      const [fileBuffer] = await file.download();
+      structuredLogger.step("File downloaded successfully", {
+        downloadedSize: fileBuffer.length
+      });
 
-  // Default: assume business expense is refundable
-  return {
-    isRefundable: true,
-    euSubCode: "77.11.00", // General business services
-    reason: "General business expense - refundable"
-  };
-}
-
-export const onInvoiceUpload = onObjectFinalized({cpu: 1}, async (event) => {
-  const fileBucket = event.data.bucket;
-  const filePath = event.data.name;
-  const contentType = event.data.contentType;
-
-  // 1. Validate the file type
-  const validTypes = ["application/pdf", "image/jpeg", "image/png"];
-  if (!contentType || !validTypes.includes(contentType)) {
-    logger.warn(`Invalid file type: ${contentType}. Halting execution.`);
-    return;
-  }
-  logger.info(
-    `Valid invoice uploaded: ${filePath}. Starting processing.`
-  );
-
-  // 2. Fetch file content from Storage
-  logger.info("Downloading file from storage for processing");
-
-  try {
-    const storage = getStorage();
-    const bucket = storage.bucket(fileBucket);
-    const file = bucket.file(filePath);
-
-    // Download the file content as a buffer
-    const [fileBuffer] = await file.download();
-    logger.info(
-      `Downloaded file: ${filePath}, size: ${fileBuffer.length} bytes`
-    );
-
-    // 3. Call Google Document AI with raw document content
-    const name =
-      `projects/${GcpProject}/locations/${GcpLocation}/` +
-      `processors/${ProcessorId}`;
+      // 3. Call Google Document AI with raw document content
+      structuredLogger.step("Preparing Document AI request");
+      const config = getConfig();
+      const name =
+        `projects/${config.gcpProject}/locations/${config.gcpLocation}/` +
+        `processors/${config.processorId}`;
 
     let document: any;
     
@@ -228,7 +153,8 @@ export const onInvoiceUpload = onObjectFinalized({cpu: 1}, async (event) => {
       };
     } else {
       logger.info("Calling Document AI for processing");
-      const [result] = await docAiClient.processDocument({
+      const client = getDocAiClient();
+      const [result] = await client.processDocument({
         name: name,
         rawDocument: {
           content: fileBuffer,
@@ -254,103 +180,72 @@ export const onInvoiceUpload = onObjectFinalized({cpu: 1}, async (event) => {
     }
     logger.info("-----------------------");
 
-    // 4. Map entities to key fields and save to Firestore
-    const extractedData: Record<string, any> = {};
-    const lineItems: any[] = [];
+    // 4. Parse Document AI entities using modular parser
+    const extractedData = parseDocumentAIEntities(document as DocumentAIResponse, filePath);
 
-    // Map key fields from entities (using discovered entity types)
-    for (const entity of document.entities) {
-      const entityType = entity.type;
-      const entityText = entity.mentionText;
-
-      if (!entityType || !entityText) continue;
-
-      switch (entityType) {
-      case "invoice_id":
-        extractedData.invoiceId = entityText;
-        break;
-      case "invoice_date":
-        extractedData.invoiceDate = entityText;
-        break;
-      case "total_amount":
-        extractedData.totalAmount = entityText;
-        break;
-      case "currency":
-        extractedData.currency = entityText;
-        break;
-      case "supplier_name":
-        extractedData.supplierName = entityText;
-        break;
-      case "net_amount":
-        extractedData.netAmount = entityText;
-        break;
-      case "vat_amount":
-        extractedData.vatAmount = entityText;
-        break;
-      case "line_item":
-        // Parse line item text and store as structured data
-        const lineItem = parseLineItem(entityText);
-        lineItems.push({
-          originalText: entityText,
-          description: lineItem.description,
-          netAmount: lineItem.netAmount,
-          vatRate: lineItem.vatRate,
-          vatAmount: lineItem.vatAmount,
-          totalAmount: lineItem.totalAmount,
-          // Will be populated by validation function
-          isRefundable: null,
-          refundableVatAmount: null,
-          euSubCode: null,
-          validationNotes: null
-        });
-        break;
-      default:
-        // Store other entities in a general object
-        if (!extractedData.otherFields) {
-          extractedData.otherFields = {};
-        }
-        extractedData.otherFields[entityType] = entityText;
-      }
+    // 5. Extract user ID from file path
+    // File path format: invoices/{userId}/{fileName}
+    const pathParts = filePath.split('/');
+    let userId = "system"; // fallback
+    let tenantId = "default"; // fallback
+    
+    console.log(`Path parts: ${JSON.stringify(pathParts)}`);
+    logger.info(`Path parts: ${JSON.stringify(pathParts)}`);
+    
+    if (pathParts.length >= 2 && pathParts[0] === 'invoices') {
+      userId = pathParts[1]; // Extract user ID from path
+      tenantId = userId; // Use user ID as tenant ID
+      console.log(`✅ Extracted user ID from path: ${userId}`);
+      logger.info(`✅ Extracted user ID from path: ${userId}`);
+    } else {
+      console.warn(`❌ Could not extract user ID from path: ${filePath}`);
+      logger.warn(`❌ Could not extract user ID from path: ${filePath}`);
     }
 
-    // Add line items to extracted data
-    extractedData.lineItems = lineItems;
-
     // 5. Save to Firestore
-    const firestore = getFirestore();
+    const firestore = getAdminFirestore();
     const documentsCollection = firestore.collection("documents");
 
     const documentData = {
-      // Mapped key fields
-      ...extractedData,
-
-      // Complete raw entities for future reference
+      // Mapped key fields (ensure extractedData shape matches frontend expectation)
+      extractedData: {
+        invoiceId: extractedData.invoiceId || null,
+        invoiceDate: extractedData.invoiceDate || null,
+        supplierName: extractedData.supplierName || null,
+        vendorName: extractedData.supplierName || null, // Legacy field for frontend compatibility
+        totalAmount: extractedData.totalAmount || null,
+        currency: extractedData.currency || 'EUR',
+        lineItems: extractedData.lineItems || [],
+        otherFields: extractedData.otherFields || {},
+      },
+      lineItems: extractedData.lineItems || [],
       rawEntities: document.entities,
-
-      // Upload metadata
-      tenantId: "default", // TODO: Extract from user context
-      uploadedBy: "system", // TODO: Extract from authenticated user
-      originalFileName: filePath,
-      storagePath: `gs://${fileBucket}/${filePath}`,
-
-      // Status and timestamps
-      status: "pending_validation",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      tenantId: tenantId,
+      uploadedBy: userId,
+      originalFileName: filePath.split('/').pop() || filePath,
+      storagePath: filePath,
+      status: DocumentStatus.AWAITING_VALIDATION,
+      totalRefundableVatAmount: 0,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    } as any;
 
     const docRef = await documentsCollection.add(documentData);
 
+    console.log(`✅ Successfully saved invoice data to Firestore. Document ID: ${docRef.id}`);
+    console.log(`📄 Document data: ${JSON.stringify({...documentData, rawEntities: '[TRUNCATED]'}, null, 2)}`);
     logger.info(
-      "Successfully saved invoice data to Firestore. " +
+      "✅ Successfully saved invoice data to Firestore. " +
       `Document ID: ${docRef.id}`
     );
 
-    logger.info(
-      `Extracted key fields: ${JSON.stringify(extractedData, null, 2)}`
-    );
-  } catch (error) {
-    logger.error("Error calling Document AI:", error, {filePath});
+    structuredLogger.step("Document processing completed successfully", {
+      extractedFields: Object.keys(extractedData).length
+    });
+    structuredLogger.endFunction(timing.startTime);
+    
+  } catch (error: any) {
+    structuredLogger.failFunction(timing.startTime, error);
   }
 });
 
@@ -359,27 +254,33 @@ export const onInvoiceUpload = onObjectFinalized({cpu: 1}, async (event) => {
 export const validateDocument = onDocumentCreated(
   "documents/{documentId}",
   async (event) => {
-    const documentId = event.params.documentId;
-    const documentData = event.data?.data();
-
-    if (!documentData) {
-      logger.error("No document data found", {documentId});
-      return;
-    }
-
-    logger.info(`Starting validation for document ${documentId}`);
+    // Create structured logger with correlation ID
+    const logContext = LogHelpers.createFirestoreContext("documents", event.params.documentId);
+    const structuredLogger = createLogger("validateDocument", logContext);
+    const timing = structuredLogger.startFunction();
 
     try {
-      const firestore = getFirestore();
+      const documentId = event.params.documentId;
+      const documentData = event.data?.data();
+
+      if (!documentData) {
+        structuredLogger.error("No document data found");
+        structuredLogger.endFunction(timing.startTime);
+        return;
+      }
+
+      structuredLogger.step("Starting validation for document");
+
+      const firestore = getAdminFirestore();
       const docRef = firestore.collection("documents").doc(documentId);
 
       // Get line items from the document
       const lineItems = documentData.lineItems || [];
 
       if (lineItems.length === 0) {
-        logger.warn("No line items found for validation", {documentId});
+        structuredLogger.warn("No line items found for validation");
         await docRef.update({
-          status: "validation_error",
+          status: DocumentStatus.VALIDATION_ERROR,
           validationError: "No line items found",
           updatedAt: new Date()
         });
@@ -391,38 +292,40 @@ export const validateDocument = onDocumentCreated(
       let totalRefundableVat = 0;
       const validatedLineItems = [];
 
-      // Validate each line item
+      // Validate each line item using refundability rules
       for (let i = 0; i < lineItems.length; i++) {
         const lineItem = lineItems[i];
-        const validation = isRefundableItem(lineItem.description || "");
+        const refundabilityResult = applyRefundabilityRules({
+          description: lineItem.description || "",
+          vatAmount: lineItem.vatAmount || 0,
+          netAmount: lineItem.netAmount || 0
+        });
 
         const validatedItem = {
           ...lineItem,
-          isRefundable: validation.isRefundable,
-          euSubCode: validation.euSubCode,
-          validationNotes: validation.reason
+          isRefundable: refundabilityResult.isRefundable,
+          euSubCode: refundabilityResult.euSubCode,
+          validationNotes: refundabilityResult.validationNotes,
+          refundableVatAmount: refundabilityResult.refundableVatAmount
         };
 
-        // Calculate refundable VAT amount
-        if (validation.isRefundable && lineItem.vatAmount) {
-          validatedItem.refundableVatAmount = lineItem.vatAmount;
-          totalRefundableVat += lineItem.vatAmount;
-        } else {
-          validatedItem.refundableVatAmount = 0;
+        // Calculate total refundable VAT
+        if (refundabilityResult.refundableVatAmount) {
+          totalRefundableVat += refundabilityResult.refundableVatAmount;
         }
 
         validatedLineItems.push(validatedItem);
 
         logger.info(
           `Line item ${i + 1}: ${lineItem.description} - ` +
-          `${validation.isRefundable ? "REFUNDABLE" : "NOT REFUNDABLE"} ` +
-          `(${validation.reason})`
+          `${refundabilityResult.isRefundable ? "REFUNDABLE" : "NOT REFUNDABLE"} ` +
+          `(${refundabilityResult.validationNotes})`
         );
       }
 
       // Determine final status
       const hasRefundableItems = validatedLineItems.some(item => item.isRefundable);
-      const finalStatus = hasRefundableItems ? "ready_for_submission" : "validation_error";
+      const finalStatus = hasRefundableItems ? DocumentStatus.READY_FOR_SUBMISSION : DocumentStatus.VALIDATION_ERROR;
 
       // Update the document with validation results
       await docRef.update({
@@ -431,30 +334,31 @@ export const validateDocument = onDocumentCreated(
         status: finalStatus,
         validationCompletedAt: new Date(),
         updatedAt: new Date(),
-        ...(finalStatus === "validation_error" && {
+        ...(finalStatus === DocumentStatus.VALIDATION_ERROR && {
           validationError: "No refundable items found"
         })
       });
 
-      logger.info(
-        `Validation completed for document ${documentId}. ` +
-        `Status: ${finalStatus}, ` +
-        `Total refundable VAT: €${totalRefundableVat.toFixed(2)}`
-      );
+      structuredLogger.step("Validation completed", {
+        status: finalStatus,
+        totalRefundableVat,
+        refundableItemsCount: validatedLineItems.filter(item => item.isRefundable).length
+      });
+      structuredLogger.endFunction(timing.startTime);
 
     } catch (error) {
-      logger.error("Error during document validation:", error, {documentId});
+      structuredLogger.failFunction(timing.startTime, error as Error);
 
       // Update document with error status
       try {
-        const firestore = getFirestore();
-        await firestore.collection("documents").doc(documentId).update({
-          status: "validation_error",
+        const firestore = getAdminFirestore();
+        await firestore.collection("documents").doc(event.params.documentId).update({
+          status: DocumentStatus.VALIDATION_ERROR,
           validationError: error instanceof Error ? error.message : "Unknown error",
           updatedAt: new Date()
         });
       } catch (updateError) {
-        logger.error("Failed to update document with error status:", updateError);
+        structuredLogger.error("Failed to update document with error status", updateError as Error);
       }
     }
   }
@@ -467,6 +371,14 @@ export const validateDocument = onDocumentCreated(
 export const generateSubmissionXml = onCall(
   {region: "europe-west1"},
   async (request) => {
+    // Create structured logger with correlation ID
+    const structuredLogger = createLogger("generateSubmissionXml", {
+      userId: request.auth?.uid,
+      submissionPeriod: request.data?.submissionPeriod,
+      countryCode: request.data?.countryCode
+    });
+    const timing = structuredLogger.startFunction();
+
     try {
       const {submissionPeriod, countryCode, tenantId} = request.data;
 
@@ -479,14 +391,18 @@ export const generateSubmissionXml = onCall(
         throw new Error("Currently only German (DE) submissions are supported");
       }
 
-      logger.info(`Generating XML submission for period ${submissionPeriod}, country ${countryCode}`);
+      structuredLogger.step("Generating XML submission", {
+        submissionPeriod,
+        countryCode,
+        tenantId
+      });
 
-      const firestore = getFirestore();
-      const storage = getStorage();
+      const firestore = getAdminFirestore();
+      const storage = getAdminStorage();
 
       // Build query for ready-for-submission documents
       let query = firestore.collection("documents")
-        .where("status", "==", "ready_for_submission")
+        .where("status", "==", DocumentStatus.READY_FOR_SUBMISSION)
         .where("country", "==", countryCode);
 
       // Add tenant filter if provided (for multi-tenant support)
@@ -599,7 +515,7 @@ export const generateSubmissionXml = onCall(
         tenantId: tenantId || "default-tenant",
         country: countryCode,
         period: submissionPeriod,
-        status: "generated",
+        status: DocumentStatus.SUBMITTED,
         totalRefundAmount,
         xmlStoragePath: storagePath,
         documentCount: matchingDocuments,
@@ -615,19 +531,21 @@ export const generateSubmissionXml = onCall(
       documentIds.forEach((docId) => {
         const docRef = firestore.collection("documents").doc(docId);
         batch.update(docRef, {
-          status: "in_submission",
+          status: DocumentStatus.SUBMITTING,
           submissionId,
           updatedAt: new Date()
         });
       });
       await batch.commit();
 
-      logger.info(
-        `XML submission generated successfully. ` +
-        `Submission ID: ${submissionId}, ` +
-        `Documents processed: ${matchingDocuments}, ` +
-        `Total refund amount: €${totalRefundAmount.toFixed(2)}`
-      );
+      structuredLogger.step("XML submission generated successfully", {
+        submissionId,
+        documentsProcessed: matchingDocuments,
+        totalRefundAmount,
+        storagePath
+      });
+
+      structuredLogger.endFunction(timing.startTime);
 
       return {
         success: true,
@@ -638,7 +556,7 @@ export const generateSubmissionXml = onCall(
       };
 
     } catch (error) {
-      logger.error("Error generating XML submission:", error);
+      structuredLogger.failFunction(timing.startTime, error as Error);
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error occurred"
@@ -726,3 +644,6 @@ function generateGermanVatXml(
 
   return xml.end({prettyPrint: true});
 }
+
+// Export the new address correction function
+export {requestAddressCorrection} from "./requestAddressCorrection";

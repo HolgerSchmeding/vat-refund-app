@@ -125,6 +125,10 @@
   color: #6f42c1;
 }
 
+.status-icon.correction {
+  color: #ea580c;
+}
+
 .status-text {
   font-size: 0.9rem;
   font-weight: 500;

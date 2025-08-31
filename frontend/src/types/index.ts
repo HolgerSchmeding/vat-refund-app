@@ -1,4 +1,5 @@
 import { Timestamp } from 'firebase/firestore';
+import type { DocumentStatusType } from './DocumentStatus';
 
 /**
  * Address interface
@@ -37,13 +38,7 @@ export interface LineItem {
 /**
  * Document status type
  */
-export type DocumentStatus = 
-  | "uploading" 
-  | "pending_validation" 
-  | "validation_error" 
-  | "ready_for_submission" 
-  | "in_submission" 
-  | "submitted";
+export type DocumentStatus = DocumentStatusType;
 
 /**
  * Document representing a receipt/invoice
