@@ -34,58 +34,70 @@ export const EU_SUB_CODES = {
  * Categories of non-refundable items according to EU VAT regulations
  */
 const NON_REFUNDABLE_KEYWORDS = {
-  ALCOHOL: ["alcohol", "wine", "beer", "spirits", "champagne", "whiskey", "vodka", "rum"],
+  ALCOHOL: ["alcohol", "wine", "beer", "spirits", "champagne", "whiskey", "vodka", "rum", "alcoholic", "beverages", "minibar"],
   ENTERTAINMENT: ["entertainment", "gift", "personal", "amusement", "leisure"],
   PROHIBITED: ["tobacco", "cigarettes", "gambling", "casino"]
 } as const;
 
 /**
  * Categories of refundable business expenses with their EU sub-codes
+ * Order matters - more specific categories should come first
  */
 const REFUNDABLE_CATEGORIES = {
+  TRANSPORTATION: {
+    keywords: ["taxi", "uber", "bus ticket", "train ticket", "flight booking", "airline ticket", "transfers", "transfer"],
+    euSubCode: EU_SUB_CODES.TRANSPORTATION,
+    reason: "Business transportation is refundable"
+  },
   ACCOMMODATION: {
     keywords: ["hotel", "accommodation", "lodging", "motel", "guesthouse"],
     euSubCode: EU_SUB_CODES.HOTEL_ACCOMMODATION,
     reason: "Business accommodation is refundable"
-  },
-  MEALS: {
-    keywords: ["meal", "restaurant", "food", "dining", "catering", "lunch", "dinner", "breakfast"],
-    euSubCode: EU_SUB_CODES.RESTAURANT_SERVICES,
-    reason: "Business meals are refundable"
   },
   FUEL: {
     keywords: ["fuel", "petrol", "gas", "diesel", "gasoline"],
     euSubCode: EU_SUB_CODES.BUSINESS_FUEL,
     reason: "Business fuel is refundable"
   },
+  MEALS: {
+    keywords: ["meal", "restaurant", "food", "dining", "catering", "lunch", "dinner", "breakfast", "client meal", "business lunch", "business dinner"],
+    euSubCode: EU_SUB_CODES.RESTAURANT_SERVICES,
+    reason: "Business meals are refundable"
+  },
   TRAINING: {
-    keywords: ["conference", "training", "seminar", "workshop", "course", "education"],
+    keywords: ["training", "training course", "seminar", "workshop", "course enrollment", "education", "conference registration", "conference fee", "course", "educational"],
     euSubCode: EU_SUB_CODES.BUSINESS_TRAINING,
     reason: "Business training and conferences are refundable"
   },
-  TRANSPORTATION: {
-    keywords: ["taxi", "uber", "transport", "bus", "train", "flight", "airline"],
-    euSubCode: EU_SUB_CODES.TRANSPORTATION,
-    reason: "Business transportation is refundable"
-  },
-  OFFICE_SUPPLIES: {
-    keywords: ["office", "supplies", "stationery", "paper", "pen", "computer"],
-    euSubCode: EU_SUB_CODES.OFFICE_SUPPLIES,
-    reason: "Office supplies are refundable"
-  },
   PROFESSIONAL_SERVICES: {
-    keywords: ["consulting", "legal", "accounting", "professional", "advisory"],
+    keywords: ["consulting", "legal", "accounting", "professional", "advisory", "consulting services", "legal advice", "accounting services", "professional advisory", "expert consultation"],
     euSubCode: EU_SUB_CODES.PROFESSIONAL_SERVICES,
     reason: "Professional services are refundable"
+  },
+  OFFICE_SUPPLIES: {
+    keywords: ["office supplies", "supplies", "stationery", "paper", "pen", "computer"],
+    euSubCode: EU_SUB_CODES.OFFICE_SUPPLIES,
+    reason: "Office supplies are refundable"
   }
 } as const;
 
 /**
  * Check if a description contains any keywords from a given array
+ * Uses word boundaries to avoid partial matches (e.g., "pen" shouldn't match "expense")
  */
 function containsKeywords(description: string, keywords: readonly string[]): boolean {
   const desc = description.toLowerCase();
-  return keywords.some(keyword => desc.includes(keyword));
+  return keywords.some(keyword => {
+    // Use word boundaries for single words, string contains for phrases
+    if (keyword.includes(' ')) {
+      // Multi-word phrases: use direct string matching
+      return desc.includes(keyword);
+    } else {
+      // Single words: use word boundaries to avoid partial matches
+      const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+      return regex.test(desc);
+    }
+  });
 }
 
 /**

@@ -62,21 +62,38 @@ export interface ExtractedDocumentData {
  * Falls back to NaN if parsing fails.
  */
 export function parseCurrency(value: string): number {
-  if (!value) return NaN;
+  if (!value || typeof value !== 'string') return NaN;
   
-  // Remove currency symbols and spaces
-  let cleaned = value.replace(/[€$£\s]/g, "");
+  // Remove multiple currency symbols and extra spaces
+  let cleaned = value.replace(/[€$£¥₹\s]+/g, "").trim();
   
-  // If European format with comma as decimal separator and dot as thousands
-  if (/\d+\.\d{3},\d{2}/.test(cleaned)) {
+  // Handle negative signs
+  const isNegative = cleaned.includes('-');
+  cleaned = cleaned.replace(/[-]/g, "");
+  
+  // Detect format based on patterns
+  if (/^\d{1,3}(\.\d{3})*,\d{2}$/.test(cleaned)) {
+    // European format: 1.234.567,89 (dot as thousands, comma as decimal)
     cleaned = cleaned.replace(/\./g, "").replace(/,/, ".");
+  } else if (/^\d+,\d{2}$/.test(cleaned)) {
+    // European format without thousands: 123,45
+    cleaned = cleaned.replace(/,/, ".");
+  } else if (/^\d{1,3}(,\d{3})*\.\d{2}$/.test(cleaned)) {
+    // American format: 1,234,567.89 (comma as thousands, dot as decimal)
+    cleaned = cleaned.replace(/,/g, "");
+  } else if (/^\d+\.\d{2}$/.test(cleaned)) {
+    // American format without thousands: 123.45 (already correct)
+    // No change needed
+  } else if (/^\d+$/.test(cleaned)) {
+    // Plain integer
+    // No change needed
   } else {
-    // Remove thousands separators (comma) then keep dot as decimal
+    // Fallback: remove all commas, keep dots
     cleaned = cleaned.replace(/,/g, "");
   }
   
   const n = parseFloat(cleaned);
-  return isNaN(n) ? NaN : n;
+  return isNaN(n) ? NaN : (isNegative ? -n : n);
 }
 
 /**
@@ -85,18 +102,18 @@ export function parseCurrency(value: string): number {
 export function parseLineItem(text: string): ParsedLineItem {
   // Basic parsing logic - in production, this would be more sophisticated
   const result: ParsedLineItem = {
-    description: text,
+    description: text, // Keep original description
     netAmount: 0,
     vatRate: 0,
     vatAmount: 0,
     totalAmount: 0
   };
 
-  // Extract amounts using regex patterns
-  const amountPattern = /€(\d+\.?\d*)/g;
+  // Extract amounts using regex patterns that handle both € and $ formats
+  const amountPattern = /[€$](\d+[\.,]?\d*)/g;
   const amounts = [...text.matchAll(amountPattern)].map(match => 
-    parseFloat(match[1])
-  );
+    parseCurrency(match[0])
+  ).filter(amount => !isNaN(amount));
 
   // Extract VAT rate
   const vatRatePattern = /(\d+)%\s*VAT/i;
@@ -111,13 +128,14 @@ export function parseLineItem(text: string): ParsedLineItem {
     if (result.vatRate > 0) {
       result.vatAmount = result.netAmount * (result.vatRate / 100);
       result.totalAmount = result.netAmount + result.vatAmount;
+    } else if (amounts.length > 1) {
+      // If we have multiple amounts and no explicit VAT rate, try to deduce
+      result.totalAmount = amounts[amounts.length - 1];
+      result.vatAmount = result.totalAmount - result.netAmount;
+      if (result.netAmount > 0 && result.vatAmount > 0) {
+        result.vatRate = Math.round((result.vatAmount / result.netAmount) * 100);
+      }
     }
-  }
-
-  // Extract description (everything before the first amount)
-  const firstAmountIndex = text.indexOf("€");
-  if (firstAmountIndex > 0) {
-    result.description = text.substring(0, firstAmountIndex).trim();
   }
 
   return result;
@@ -162,7 +180,7 @@ export function parseDocumentAIEntities(
     const entityType = entity.type;
     const entityText = entity.mentionText;
 
-    if (!entityType || !entityText) continue;
+    if (!entityType) continue; // Skip entities without type, but allow empty text
 
     switch (entityType) {
       case "invoice_id":
@@ -175,7 +193,7 @@ export function parseDocumentAIEntities(
         
       case "total_amount": {
         const parsed = parseCurrency(entityText);
-        extractedData.totalAmount = isNaN(parsed) ? undefined : parsed;
+        extractedData.totalAmount = parsed; // Keep NaN if parsing fails
         break;
       }
       
@@ -189,13 +207,13 @@ export function parseDocumentAIEntities(
         
       case "net_amount": {
         const parsed = parseCurrency(entityText);
-        extractedData.netAmount = isNaN(parsed) ? undefined : parsed;
+        extractedData.netAmount = parsed; // Keep NaN if parsing fails
         break;
       }
       
       case "vat_amount": {
         const parsed = parseCurrency(entityText);
-        extractedData.vatAmount = isNaN(parsed) ? undefined : parsed;
+        extractedData.vatAmount = parsed; // Keep NaN if parsing fails
         break;
       }
       

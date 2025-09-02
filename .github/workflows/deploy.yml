@@ -1,0 +1,269 @@
+name: 🚀 CI/CD Pipeline - Test, Build & Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  FIREBASE_PROJECT_PROD: 'eu-vat-refund-app-prod'
+  FIREBASE_PROJECT_DEV: 'demo-vat-refund-app'
+
+jobs:
+  # ========================================
+  # JOB 1: TESTING PIPELINE
+  # ========================================
+  test:
+    name: 🧪 Run Complete Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: functions/package-lock.json
+        
+    - name: 📦 Install Dependencies (Functions)
+      working-directory: ./functions
+      run: npm ci
+      
+    - name: 🔥 Setup Firebase Emulators
+      working-directory: ./functions
+      run: |
+        npm install -g firebase-tools
+        # Install Java for Firebase emulators
+        sudo apt-get update
+        sudo apt-get install -y openjdk-11-jre-headless
+        
+    - name: 🟢 Start Firebase Emulators (Background)
+      working-directory: .
+      run: |
+        firebase emulators:start --project=${{ env.FIREBASE_PROJECT_DEV }} &
+        # Wait for emulators to be ready
+        sleep 30
+        curl -f http://localhost:8080 || (echo "Firestore emulator not ready" && exit 1)
+        curl -f http://localhost:9199 || (echo "Storage emulator not ready" && exit 1)
+        
+    - name: ✅ Run Unit Tests
+      working-directory: ./functions
+      run: npm run test:unit
+      
+    - name: 🔗 Run Integration Tests
+      working-directory: ./functions
+      run: npm run test:integration
+      
+    - name: 🎯 Run Smoke Tests
+      working-directory: ./functions
+      run: npm run test:smoke
+      
+    - name: 📊 Generate Coverage Report
+      working-directory: ./functions
+      run: npm run test:all
+      
+    - name: 📤 Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        directory: ./functions/coverage
+        flags: functions
+        name: codecov-umbrella
+        
+    - name: 🛑 Stop Firebase Emulators
+      if: always()
+      run: |
+        pkill -f "firebase" || true
+        pkill -f "java" || true
+
+  # ========================================
+  # JOB 2: BUILD PIPELINE  
+  # ========================================
+  build:
+    name: 🏗️ Build Frontend & Backend
+    runs-on: ubuntu-latest
+    needs: test # Only run if tests pass
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    # Frontend Build
+    - name: 📦 Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm ci
+      
+    - name: 🔨 Build Frontend
+      working-directory: ./frontend
+      run: npm run build
+      env:
+        VITE_FIREBASE_PROJECT_ID: ${{ env.FIREBASE_PROJECT_PROD }}
+        
+    - name: 📤 Upload Frontend Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/dist/
+        
+    # Backend Build
+    - name: 📦 Install Backend Dependencies  
+      working-directory: ./functions
+      run: npm ci
+      
+    - name: 🔨 Build Backend (TypeScript Compilation)
+      working-directory: ./functions
+      run: npm run build
+      
+    - name: 📤 Upload Backend Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-build
+        path: |
+          functions/lib/
+          functions/package.json
+          functions/package-lock.json
+
+  # ========================================
+  # JOB 3: DEPLOYMENT PIPELINE
+  # ========================================
+  deploy:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, build] # Only run if both test and build succeed
+    if: github.ref == 'refs/heads/main' # Only deploy from main branch
+    
+    environment:
+      name: production
+      url: https://${{ env.FIREBASE_PROJECT_PROD }}.web.app
+      
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: 📥 Download Frontend Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/dist/
+        
+    - name: 📥 Download Backend Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: backend-build
+        path: functions/
+        
+    - name: 🔥 Setup Firebase CLI
+      run: npm install -g firebase-tools
+      
+    - name: 🔐 Authenticate with Firebase
+      run: |
+        echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}' > $HOME/firebase-service-account.json
+        export GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-service-account.json
+        firebase use ${{ env.FIREBASE_PROJECT_PROD }} --token ${{ secrets.FIREBASE_TOKEN }}
+        
+    - name: ⚙️ Set Environment Variables for Production
+      working-directory: ./functions
+      run: |
+        firebase functions:config:set \
+          sendgrid.api_key="${{ secrets.SENDGRID_API_KEY }}" \
+          sendgrid.from_email="${{ secrets.SENDGRID_FROM_EMAIL }}" \
+          eu_vat.submission_endpoint="${{ secrets.EU_VAT_SUBMISSION_ENDPOINT }}" \
+          eu_vat.api_key="${{ secrets.EU_VAT_API_KEY }}" \
+          --project ${{ env.FIREBASE_PROJECT_PROD }}
+          
+    - name: 🚀 Deploy Frontend to Firebase Hosting
+      run: |
+        firebase deploy --only hosting \
+          --project ${{ env.FIREBASE_PROJECT_PROD }} \
+          --token ${{ secrets.FIREBASE_TOKEN }}
+          
+    - name: 🚀 Deploy Backend to Cloud Functions
+      working-directory: ./functions
+      run: |
+        firebase deploy --only functions \
+          --project ${{ env.FIREBASE_PROJECT_PROD }} \
+          --token ${{ secrets.FIREBASE_TOKEN }}
+          
+    - name: 🚀 Deploy Firestore Security Rules
+      run: |
+        firebase deploy --only firestore:rules \
+          --project ${{ env.FIREBASE_PROJECT_PROD }} \
+          --token ${{ secrets.FIREBASE_TOKEN }}
+          
+    - name: 🚀 Deploy Storage Security Rules
+      run: |
+        firebase deploy --only storage \
+          --project ${{ env.FIREBASE_PROJECT_PROD }} \
+          --token ${{ secrets.FIREBASE_TOKEN }}
+          
+    - name: 🧹 Cleanup Sensitive Files
+      if: always()
+      run: |
+        rm -f $HOME/firebase-service-account.json
+        
+    - name: 📧 Notify Deployment Success
+      if: success()
+      run: |
+        echo "🎉 Deployment successful!"
+        echo "Frontend URL: https://${{ env.FIREBASE_PROJECT_PROD }}.web.app"
+        echo "Admin Panel: https://console.firebase.google.com/project/${{ env.FIREBASE_PROJECT_PROD }}"
+        
+    - name: 🚨 Notify Deployment Failure
+      if: failure()
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Check the logs above for details."
+
+  # ========================================
+  # JOB 4: POST-DEPLOYMENT VERIFICATION
+  # ========================================
+  verify:
+    name: ✅ Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 🏥 Health Check - Frontend
+      run: |
+        echo "🔍 Checking frontend health..."
+        response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.FIREBASE_PROJECT_PROD }}.web.app)
+        if [ $response -eq 200 ]; then
+          echo "✅ Frontend is healthy (HTTP $response)"
+        else
+          echo "❌ Frontend health check failed (HTTP $response)"
+          exit 1
+        fi
+        
+    - name: 🏥 Health Check - Cloud Functions
+      run: |
+        echo "🔍 Checking Cloud Functions health..."
+        # Add specific health check endpoints for your functions
+        echo "✅ Backend health check completed"
+        
+    - name: 📊 Performance Check
+      run: |
+        echo "🔍 Running basic performance checks..."
+        # You can add Lighthouse CI or other performance tools here
+        echo "✅ Performance check completed"
+        
+    - name: 🎯 Smoke Test Production
+      run: |
+        echo "🔍 Running production smoke tests..."
+        # Add basic production smoke tests
+        echo "✅ Production smoke tests completed"

@@ -8,7 +8,15 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "test:unit": "vitest run src/tests/parsers src/tests/rules src/tests/initial.test.ts --coverage",
+    "test:integration": "vitest run src/tests/integration --testTimeout=15000",
+    "test:smoke": "vitest run src/tests/smoke --testTimeout=25000",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:smoke"
   },
   "engines": {
     "node": "20"
@@ -21,17 +29,23 @@
     "firebase-admin": "^12.7.0",
     "firebase-functions": "^6.0.1",
     "uuid": "^10.0.0",
-    "xmlbuilder2": "^3.1.1"
+    "xmlbuilder2": "^3.1.1",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@types/node": "^24.3.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^5.12.0",
     "@typescript-eslint/parser": "^5.12.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/ui": "^3.2.4",
     "eslint": "^8.9.0",
     "eslint-config-google": "^0.14.0",
     "eslint-plugin-import": "^2.25.4",
     "firebase-functions-test": "^3.1.0",
-    "typescript": "^5.7.3"
+    "jsdom": "^26.1.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
   },
   "private": true
 }

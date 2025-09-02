@@ -1,12 +1,102 @@
-rules_version = '2';
+// Cloud Storage Security Rules for Production Environment
+// These rules secure file uploads and downloads for the EU VAT Refund application
 
+rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // DEVELOPMENT ONLY: Erlaube Lese- und Schreibzugriff für alle angemeldeten Benutzer
-    // WARNUNG: Diese Regel ist nur für die lokale Entwicklung gedacht!
-    // Vor Live-Deployment durch sicherere Regeln ersetzen!
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() { 
+      return request.auth != null; 
+    }
+    
+    // Get current user ID
+    function userId() { 
+      return request.auth.uid; 
+    }
+    
+    // Check if user owns the file (based on path structure)
+    function isOwner(pathUserId) {
+      return isAuthenticated() && userId() == pathUserId;
+    }
+    
+    // Check if file type is allowed
+    function isAllowedFileType() {
+      return request.resource.contentType != null &&
+             (request.resource.contentType.matches('application/pdf') ||
+              request.resource.contentType.matches('image/.*') ||
+              request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
+              request.resource.contentType.matches('application/vnd.ms-excel') ||
+              request.resource.contentType.matches('text/csv'));
+    }
+    
+    // Check if file size is within limits (50MB max)
+    function isAllowedFileSize() {
+      return request.resource.size < 50 * 1024 * 1024;
+    }
+    
+    // ========================================
+    // USER DOCUMENT UPLOADS
+    // ========================================
+    
+    // Path: documents/{userId}/{documentId}/{fileName}
+    match /documents/{pathUserId}/{documentId}/{fileName} {
+      // Users can upload files to their own directory
+      allow create: if isOwner(pathUserId) &&
+                       isAllowedFileType() &&
+                       isAllowedFileSize();
+      
+      // Users can read their own uploaded files
+      allow read: if isOwner(pathUserId);
+      
+      // Users can update/replace their own files
+      allow update: if isOwner(pathUserId) &&
+                       isAllowedFileType() &&
+                       isAllowedFileSize();
+      
+      // Users can delete their own files
+      allow delete: if isOwner(pathUserId);
+    }
+
+    // Legacy invoice path support (backward compatibility)
+    match /invoices/{pathUserId}/{fileName=**} {
+      allow read: if isOwner(pathUserId);
+      
+      allow write: if isOwner(pathUserId)
+        && request.resource.size < 10 * 1024 * 1024 // <10MB
+        && request.resource.contentType.matches('application/pdf|image/png|image/jpeg');
+    }
+
+    // Allow access to submissions (read-only for own files)
+    match /submissions/{fileName=**} {
+      allow read: if isAuthenticated();
+      allow write: if false; // only via cloud functions
+    }
+    
+    // ========================================
+    // PROCESSED DOCUMENTS (Cloud Functions only)
+    // ========================================
+    
+    // Path: processed/{userId}/{documentId}/{fileName}
+    match /processed/{pathUserId}/{documentId}/{fileName} {
+      // Users can read their processed files
+      allow read: if isOwner(pathUserId);
+      
+      // Only Cloud Functions can write processed files
+      allow write: if false;
+    }
+
+    // ========================================
+    // DEFAULT DENY (Security by default)
+    // ========================================
+    
+    // Deny access to all other paths
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

@@ -1,0 +1,17 @@
+// Firestore Security Rules for Development/Demo Environment
+// These rules provide permissive access for development and demo purposes
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // COMPLETELY PERMISSIVE RULES FOR DEMO
+    // ========================================
+    
+    // Allow all operations on all documents for demo purposes
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

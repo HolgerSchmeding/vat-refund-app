@@ -4,7 +4,6 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 // import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { storage /*, db*/ } from '../firebaseConfig';
 import { useAuth } from '../hooks/useAuth';
-import { DocumentStatus } from '../types/DocumentStatus';
 import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react';
 import './InvoiceUploader.css';
 
@@ -16,7 +15,11 @@ interface UploadFile {
   error?: string;
 }
 
-const InvoiceUploader: React.FC = () => {
+interface InvoiceUploaderProps {
+  onUploadComplete?: () => void;
+}
+
+const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({ onUploadComplete }) => {
   const { user } = useAuth();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -189,6 +192,11 @@ const InvoiceUploader: React.FC = () => {
                 progress: 100 
               } : f)
             );
+
+            // Call the completion callback if provided
+            if (onUploadComplete) {
+              onUploadComplete();
+            }
 
             // Remove completed upload after 5 seconds (increased from 3)
             setTimeout(() => {

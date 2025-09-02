@@ -22,6 +22,13 @@ import {
 } from "./parsers/documentParser";
 import { applyRefundabilityRules } from "./rules/refundabilityRules";
 
+// Import input validation
+import { validateSubmissionInput, validateSubmissionPeriod, validateTenantAccess } from "./validators/submissionValidator";
+
+// Import retry wrapper for resilience
+import { retryDocumentAI } from "./utils/retryWrapper";
+// import { retry } from "./utils/retry"; // Alternative simple retry utility
+
 // Validate configuration on module load
 try {
   validateConfig();
@@ -154,14 +161,30 @@ export const onInvoiceUpload = onObjectFinalized(
     } else {
       logger.info("Calling Document AI for processing");
       const client = getDocAiClient();
-      const [result] = await client.processDocument({
-        name: name,
-        rawDocument: {
-          content: fileBuffer,
-          mimeType: contentType,
-        },
-      });
-      document = result.document;
+      
+      // Apply retry wrapper to Document AI call for resilience
+      // Option 1: Advanced retry wrapper (currently used)
+      const result = await retryDocumentAI(() => 
+        client.processDocument({
+          name: name,
+          rawDocument: {
+            content: fileBuffer,
+            mimeType: contentType,
+          },
+        })
+      ) as any[];
+      
+      // Option 2: Simple retry utility (alternative implementation)
+      // import { retry } from "./utils/retry";
+      // const [result] = await retry(() => client.processDocument({
+      //   name: name,
+      //   rawDocument: {
+      //     content: fileBuffer,
+      //     mimeType: contentType,
+      //   },
+      // }));
+      
+      document = result[0]?.document;
     }
     if (!document || !document.entities) {
       logger.error("Document AI did not return any entities.", {filePath});
@@ -380,21 +403,23 @@ export const generateSubmissionXml = onCall(
     const timing = structuredLogger.startFunction();
 
     try {
-      const {submissionPeriod, countryCode, tenantId} = request.data;
+      // 1. Validate input data first - this is our first line of defense
+      structuredLogger.step("Validating input parameters");
+      const validatedData = validateSubmissionInput(request.data);
+      const { submissionPeriod, countryCode, tenantId } = validatedData;
 
-      // Validate input parameters
-      if (!submissionPeriod || !countryCode) {
-        throw new Error("Missing required parameters: submissionPeriod and countryCode");
-      }
+      // 2. Additional business validation
+      validateSubmissionPeriod(submissionPeriod);
+      
+      // 3. Validate tenant access (use user's tenant if none provided)
+      const userTenantId = request.auth?.uid || "anonymous";
+      const effectiveTenantId = tenantId || userTenantId;
+      validateTenantAccess(tenantId, userTenantId);
 
-      if (countryCode !== "DE") {
-        throw new Error("Currently only German (DE) submissions are supported");
-      }
-
-      structuredLogger.step("Generating XML submission", {
+      structuredLogger.step("Input validation completed successfully", {
         submissionPeriod,
         countryCode,
-        tenantId
+        tenantId: effectiveTenantId
       });
 
       const firestore = getAdminFirestore();
@@ -406,8 +431,8 @@ export const generateSubmissionXml = onCall(
         .where("country", "==", countryCode);
 
       // Add tenant filter if provided (for multi-tenant support)
-      if (tenantId) {
-        query = query.where("tenantId", "==", tenantId);
+      if (effectiveTenantId) {
+        query = query.where("tenantId", "==", effectiveTenantId);
       }
 
       // Execute query
@@ -415,6 +440,12 @@ export const generateSubmissionXml = onCall(
 
       if (querySnapshot.empty) {
         throw new Error(`No ready-for-submission documents found for period ${submissionPeriod} and country ${countryCode}`);
+      }
+
+      // Check country support
+      if (countryCode !== "DE") {
+        structuredLogger.warn("Non-German submission requested", { countryCode });
+        throw new Error(`XML generation for country ${countryCode} is not yet implemented. Currently only DE (Germany) is supported.`);
       }
 
       // Filter documents by period and aggregate data by EU sub-code
@@ -512,7 +543,7 @@ export const generateSubmissionXml = onCall(
 
       // Create submission record in Firestore
       const submissionData = {
-        tenantId: tenantId || "default-tenant",
+        tenantId: effectiveTenantId,
         country: countryCode,
         period: submissionPeriod,
         status: DocumentStatus.SUBMITTED,
@@ -557,9 +588,36 @@ export const generateSubmissionXml = onCall(
 
     } catch (error) {
       structuredLogger.failFunction(timing.startTime, error as Error);
+      
+      // Enhanced error handling with validation-specific responses
+      if (error instanceof Error) {
+        const errorMessage = error.message;
+        
+        // Check if it's a validation error
+        if (errorMessage.includes("Invalid submission input:")) {
+          return {
+            success: false,
+            error: errorMessage,
+            errorType: "VALIDATION_ERROR"
+          };
+        }
+        
+        // Check if it's a business logic error
+        if (errorMessage.includes("not yet implemented") || 
+            errorMessage.includes("No ready-for-submission documents")) {
+          return {
+            success: false,
+            error: errorMessage,
+            errorType: "BUSINESS_LOGIC_ERROR"
+          };
+        }
+      }
+      
+      // Generic error response
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error occurred"
+        error: error instanceof Error ? error.message : "Unknown error occurred",
+        errorType: "SYSTEM_ERROR"
       };
     }
   }
@@ -647,3 +705,6 @@ function generateGermanVatXml(
 
 // Export the new address correction function
 export {requestAddressCorrection} from "./requestAddressCorrection";
+
+// Export the sample documents creation function
+export {createSampleDocuments} from "./createSampleDocuments";

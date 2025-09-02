@@ -14,6 +14,7 @@ import {
 import DocumentList from '../components/DocumentList';
 import SubmissionGenerator from '../components/SubmissionGenerator';
 import InvoiceUploader from '../components/InvoiceUploader';
+import FirstUploadWizard from '../components/FirstUploadWizard';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -22,6 +23,11 @@ export default function Dashboard() {
   const { submissions, loading: submissionsLoading } = useSubmissions();
   const metrics = useDashboardMetrics();
   const [activeTab, setActiveTab] = useState<'documents' | 'submissions'>('documents');
+  const [showFirstUploadWizard, setShowFirstUploadWizard] = useState(false);
+
+  // Check if user is new (no documents and no dismissed wizard)
+  const isNewUser = !documentsLoading && documents.length === 0 && 
+    !localStorage.getItem(`wizard-dismissed-${user?.uid}`);
 
   const handleLogout = async () => {
     try {
@@ -29,6 +35,18 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Logout error:', error);
     }
+  };
+
+  const handleWizardClose = () => {
+    setShowFirstUploadWizard(false);
+    if (user?.uid) {
+      localStorage.setItem(`wizard-dismissed-${user.uid}`, 'true');
+    }
+  };
+
+  const handleSampleDataLoad = () => {
+    // Force refresh of documents
+    window.location.reload();
   };
 
   const formatCurrency = (amount: number) => {
@@ -160,13 +178,35 @@ export default function Dashboard() {
                     <p>Loading documents...</p>
                   </div>
                 ) : documents.length === 0 ? (
-                  <div className="empty-state">
-                    <FileText size={48} />
-                    <h3>No documents yet</h3>
-                    <p>Upload your first invoice or receipt to get started</p>
-                  </div>
+                  isNewUser ? (
+                    <FirstUploadWizard 
+                      onClose={handleWizardClose}
+                      onSampleDataLoad={handleSampleDataLoad}
+                    />
+                  ) : (
+                    <div className="empty-state">
+                      <FileText size={48} />
+                      <h3>No documents yet</h3>
+                      <p>Upload your first invoice or receipt to get started</p>
+                      <button 
+                        className="primary-button"
+                        onClick={() => setShowFirstUploadWizard(true)}
+                        style={{ marginTop: '1rem' }}
+                      >
+                        Show Getting Started Guide
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <DocumentList documents={documents} />
+                )}
+
+                {/* Show wizard overlay if triggered manually */}
+                {showFirstUploadWizard && (
+                  <FirstUploadWizard 
+                    onClose={handleWizardClose}
+                    onSampleDataLoad={handleSampleDataLoad}
+                  />
                 )}
               </div>
             )}
