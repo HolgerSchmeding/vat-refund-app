@@ -96,8 +96,24 @@ export function useDocuments() {
           } as Document;
         });
 
+        console.log('🔍 useDocuments: Before filter - docs count:', docs.length);
+        console.log('🔍 useDocuments: Current user.uid:', user.uid);
+        
+        // Debug: Log all document userIds to see what we have
+        docs.forEach((doc, index) => {
+          console.log(`🔍 Doc ${index}:`, {
+            id: (doc as any).id,
+            userId: (doc as any).userId,
+            uploadedBy: (doc as any).uploadedBy,
+            originalFileName: (doc as any).originalFileName
+          });
+        });
+
         // Always filter client-side to avoid Firestore query issues
-        docs = docs.filter(d => (d as any).uploadedBy === user.uid);
+        // Fixed: Filter by userId (not uploadedBy)
+        docs = docs.filter(d => (d as any).userId === user.uid);
+        
+        console.log('🔍 useDocuments: After filter - docs count:', docs.length);
         
         // Sort manually by createdAt to avoid Firestore ordering issues
         docs.sort((a, b) => {

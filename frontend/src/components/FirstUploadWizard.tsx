@@ -12,9 +12,7 @@ import {
 } from 'lucide-react';
 // Firestore imports only retained if fallback client insert is needed
 // (currently we avoid direct writes because security rules block non 'uploaded' status on create)
-import { getAuth, signInAnonymously } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebaseConfig';
+import { getAuth } from 'firebase/auth';
 import InvoiceUploader from './InvoiceUploader';
 import './FirstUploadWizard.css';
 
@@ -82,29 +80,80 @@ const FirstUploadWizard: React.FC<FirstUploadWizardProps> = ({
     try {
       const auth = getAuth();
       if (!auth.currentUser) {
-        console.log('[SampleData] Kein User – anonyme Anmeldung (Demo)…');
-        await signInAnonymously(auth);
-      }
-      if (!auth.currentUser) throw new Error('Authentifizierung fehlgeschlagen');
-
-      console.log('[SampleData] Rufe Cloud Function createSampleDocuments auf…');
-      const fn = httpsCallable(functions, 'createSampleDocuments');
-      const result: any = await fn();
-      console.log('[SampleData] Function Ergebnis:', result?.data);
-
-      onSampleDataLoad();
-      onClose();
-    } catch (e: any) {
-      // Spezielle Behandlung für bereits vorhandene Beispieldaten
-      const code = e?.code || e?.details || e?.message;
-      if (code?.includes('already-exists')) {
-        console.warn('[SampleData] Bereits vorhanden – fahre fort.');
-        onSampleDataLoad();
-        onClose();
+        console.log('[SampleData] Kein User – normale Anmeldung erforderlich');
+        alert('Bitte melden Sie sich zuerst an, um Beispieldaten zu laden.');
+        setIsLoadingSampleData(false);
         return;
       }
-      console.error('Fehler beim Laden der Beispieldaten (Function):', e);
-      alert('Fehler beim Laden der Beispieldaten (Function): ' + (e?.message || e));
+
+      console.log('[SampleData] Erstelle lokale Beispieldaten für User:', auth.currentUser.uid);
+      console.log('[SampleData] User ist anonym:', auth.currentUser.isAnonymous);
+      
+      // Create sample documents directly in Firestore
+      const sampleDocuments = [
+        {
+          originalFileName: "hotel-booking-berlin.pdf",
+          status: "READY_FOR_SUBMISSION",
+          extractedData: {
+            supplierName: "Hotel Adlon Kempinski Berlin",
+            invoiceDate: "2024-08-15",
+            totalAmount: 189.00,
+            currency: "EUR",
+            vatRate: 19,
+            vatAmount: 30.21
+          },
+          totalRefundableVatAmount: 30.21,
+          isSampleData: true,
+          createdAt: new Date(),
+          userId: auth.currentUser.uid
+        },
+        {
+          originalFileName: "conference-registration.pdf", 
+          status: "AWAITING_VALIDATION",
+          extractedData: {
+            supplierName: "TechConf Europe GmbH",
+            invoiceDate: "2024-08-20",
+            totalAmount: 595.00,
+            currency: "EUR",
+            vatRate: 19,
+            vatAmount: 95.13
+          },
+          totalRefundableVatAmount: 95.13,
+          isSampleData: true,
+          createdAt: new Date(),
+          userId: auth.currentUser.uid
+        }
+      ];
+
+      // Add documents to Firestore
+      const { collection, addDoc } = await import('firebase/firestore');
+      const { db } = await import('../firebaseConfig');
+      
+      console.log('[SampleData] Beginne mit dem Erstellen der Dokumente...');
+      
+      for (const [index, doc] of sampleDocuments.entries()) {
+        try {
+          console.log(`[SampleData] Erstelle Dokument ${index + 1}:`, doc.originalFileName);
+          const docRef = await addDoc(collection(db, 'documents'), doc);
+          console.log(`[SampleData] Dokument ${index + 1} erstellt mit ID:`, docRef.id);
+        } catch (docError) {
+          console.error(`[SampleData] Fehler bei Dokument ${index + 1}:`, docError);
+          throw docError;
+        }
+      }
+      
+      console.log('[SampleData] Alle Beispieldaten erfolgreich erstellt!');
+      alert('Beispieldaten erfolgreich geladen! Das Dashboard wird in 2 Sekunden aktualisiert.');
+      
+      // Kurz warten und dann Dashboard aktualisieren
+      setTimeout(() => {
+        onSampleDataLoad();
+        onClose();
+      }, 2000);
+      
+    } catch (e: any) {
+      console.error('Fehler beim Laden der Beispieldaten:', e);
+      alert('Fehler beim Laden der Beispieldaten: ' + (e?.message || e));
     } finally {
       setIsLoadingSampleData(false);
     }

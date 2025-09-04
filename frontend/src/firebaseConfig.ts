@@ -6,14 +6,14 @@ import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
 // Your Firebase configuration
-// For development with emulators, these can be placeholder values
+// Production configuration for vat-refund-app-2025
 const firebaseConfig = {
-  apiKey: "demo-api-key",
-  authDomain: "demo-vat-refund-app.firebaseapp.com",
-  projectId: "demo-vat-refund-app",
-  storageBucket: "demo-vat-refund-app.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:demo-app-id"
+  apiKey: "AIzaSyBN_uC209PVSEsYNee9Y0gv4q-g5E2k6YQ",
+  authDomain: "vat-refund-app-2025.firebaseapp.com",
+  projectId: "vat-refund-app-2025",
+  storageBucket: "vat-refund-app-2025.firebasestorage.app",
+  messagingSenderId: "202816087172",
+  appId: "1:202816087172:web:3d8946d91f2093c7ba8ed1"
 };
 
 // Initialize Firebase
