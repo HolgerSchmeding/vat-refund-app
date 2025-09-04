@@ -36,10 +36,10 @@ export interface RetryResult<T> {
  * Generic retry wrapper with exponential backoff
  * @param fn Function to retry
  * @param opts Retry configuration options
- * @returns Promise resolving to the function result
+ * @return Promise resolving to the function result
  */
 export async function retry<T>(
-  fn: () => Promise<T>, 
+  fn: () => Promise<T>,
   opts: RetryOptions
 ): Promise<T> {
   const {
@@ -48,7 +48,7 @@ export async function retry<T>(
     maxDelayMs = 8000,
     jitter = true,
     timeoutMs,
-    retryOn = defaultRetryableCheck
+    retryOn = defaultRetryableCheck,
   } = opts;
 
   let attempt = 0;
@@ -63,34 +63,33 @@ export async function retry<T>(
       }
 
       const result = await fn();
-      
+
       if (attempt > 0) {
         logger.info(`Retry succeeded on attempt ${attempt + 1}/${retries + 1}`, {
           attempts: attempt + 1,
-          totalDuration: Date.now() - startTime
+          totalDuration: Date.now() - startTime,
         });
       }
-      
+
       return result;
-      
     } catch (err) {
       lastError = err;
       attempt++;
-      
+
       // If we've exhausted retries or error is not retryable, throw
       if (attempt > retries || !retryOn(err)) {
-        logger.error(`Retry failed permanently`, {
+        logger.error("Retry failed permanently", {
           attempts: attempt,
           totalDuration: Date.now() - startTime,
           lastError: err instanceof Error ? err.message : String(err),
-          retryable: retryOn(err)
+          retryable: retryOn(err),
         });
         throw err;
       }
 
       // Calculate delay with exponential backoff
       let delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
-      
+
       // Add jitter to prevent thundering herd
       if (jitter) {
         const jitterMultiplier = 0.5 + Math.random() * 0.5; // 0.5 to 1.0
@@ -101,11 +100,11 @@ export async function retry<T>(
         attempt,
         delay,
         error: err instanceof Error ? err.message : String(err),
-        retryable: retryOn(err)
+        retryable: retryOn(err),
       });
 
       // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
@@ -116,7 +115,7 @@ export async function retry<T>(
 /**
  * Default logic to determine if an error should trigger a retry
  * @param err The error to check
- * @returns true if the error is retryable
+ * @return true if the error is retryable
  */
 export function defaultRetryableCheck(err: any): boolean {
   if (!err) return false;
@@ -140,16 +139,16 @@ export function defaultRetryableCheck(err: any): boolean {
     /ENOTFOUND/i,
     /socket hang up/i,
     /timeout/i,
-    /network/i
+    /network/i,
   ];
 
-  return retryablePatterns.some(pattern => pattern.test(message));
+  return retryablePatterns.some((pattern) => pattern.test(message));
 }
 
 /**
  * Convenience function for retrying Document AI calls
  * @param fn Document AI function to retry
- * @returns Promise with retry logic applied
+ * @return Promise with retry logic applied
  */
 export async function retryDocumentAI<T>(fn: () => Promise<T>): Promise<T> {
   return retry(fn, {
@@ -161,27 +160,27 @@ export async function retryDocumentAI<T>(fn: () => Promise<T>): Promise<T> {
     retryOn: (err) => {
       // Document AI specific retry logic
       const statusCode = err.code || err.statusCode;
-      
+
       // Always retry on these codes
       if ([429, 500, 502, 503, 504].includes(statusCode)) {
         return true;
       }
-      
+
       // Don't retry on client errors (400-499 except 429)
       if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
         return false;
       }
-      
+
       // Use default network error detection
       return defaultRetryableCheck(err);
-    }
+    },
   });
 }
 
 /**
  * Convenience function for retrying SendGrid calls
  * @param fn SendGrid function to retry
- * @returns Promise with retry logic applied
+ * @return Promise with retry logic applied
  */
 export async function retrySendGrid<T>(fn: () => Promise<T>): Promise<T> {
   return retry(fn, {
@@ -192,26 +191,26 @@ export async function retrySendGrid<T>(fn: () => Promise<T>): Promise<T> {
     timeoutMs: 20000, // 20 second total timeout
     retryOn: (err) => {
       const statusCode = err.code || err.statusCode;
-      
+
       // SendGrid specific retry logic
       if ([429, 500, 502, 503, 504].includes(statusCode)) {
         return true;
       }
-      
+
       // Don't retry on authentication or validation errors
       if ([401, 403, 400].includes(statusCode)) {
         return false;
       }
-      
+
       return defaultRetryableCheck(err);
-    }
+    },
   });
 }
 
 /**
  * Create a retry function with preset options
  * @param options Default retry options
- * @returns Function that applies retry logic with these options
+ * @return Function that applies retry logic with these options
  */
 export function createRetryFunction(options: RetryOptions) {
   return <T>(fn: () => Promise<T>) => retry(fn, options);

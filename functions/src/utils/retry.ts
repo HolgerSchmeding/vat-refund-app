@@ -3,7 +3,7 @@
 /**
  * Checks if an error is likely a temporary, "transient" issue.
  * @param {any} error The error to check.
- * @returns {boolean} True if the error is retryable.
+ * @return {boolean} True if the error is retryable.
  */
 function isRetryableError(error: any): boolean {
   if (!error) return false;
@@ -19,7 +19,7 @@ function isRetryableError(error: any): boolean {
  * @param {number} delayMs The base delay in milliseconds.
  * @returns {Promise<T>} The result of the function if successful.
  */
-export async function retry<T>(fn: () => Promise<T>, retries: number = 3, delayMs: number = 500): Promise<T> {
+export async function retry<T>(fn: () => Promise<T>, retries = 3, delayMs = 500): Promise<T> {
   let lastError: any;
 
   for (let i = 0; i < retries; i++) {
@@ -33,7 +33,7 @@ export async function retry<T>(fn: () => Promise<T>, retries: number = 3, delayM
       }
       // Exponential backoff with jitter
       const delay = delayMs * 2 ** i + Math.random() * delayMs;
-      await new Promise(res => setTimeout(res, delay));
+      await new Promise((res) => setTimeout(res, delay));
     }
   }
   throw lastError;

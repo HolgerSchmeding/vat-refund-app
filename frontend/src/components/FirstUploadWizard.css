@@ -23,6 +23,30 @@
   max-height: 90vh;
   overflow-y: auto;
   animation: slideUp 0.4s ease;
+  position: relative;
+}
+
+.wizard-close-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  z-index: 10;
+}
+
+.wizard-close-button:hover {
+  background: #f1f5f9;
+  border-color: #d1d5db;
+  color: #374151;
 }
 
 .wizard-step {

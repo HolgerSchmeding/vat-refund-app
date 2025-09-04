@@ -1,0 +1,120 @@
+/* NotificationBell.css */
+
+.notification-bell-container {
+  position: relative;
+  display: inline-block;
+}
+
+.notification-bell {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.notification-bell:hover {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.notification-bell.has-unread {
+  color: #2563eb;
+}
+
+.notification-bell.has-unread:hover {
+  background-color: #eff6ff;
+}
+
+.notification-bell.loading {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.notification-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background-color: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  animation: notification-pulse 2s infinite;
+}
+
+@keyframes notification-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .notification-bell {
+    padding: 6px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+  
+  .notification-badge {
+    top: 2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    font-size: 9px;
+  }
+}
+
+/* Focus styles for accessibility */
+.notification-bell:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.notification-bell:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .notification-bell {
+    border: 1px solid currentColor;
+  }
+  
+  .notification-badge {
+    border: 1px solid white;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .notification-bell,
+  .notification-badge {
+    transition: none;
+  }
+  
+  @keyframes notification-pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+  }
+}

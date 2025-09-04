@@ -7,7 +7,8 @@ import {
   Sparkles,
   Eye,
   Zap,
-  Shield
+  Shield,
+  X
 } from 'lucide-react';
 // Firestore imports only retained if fallback client insert is needed
 // (currently we avoid direct writes because security rules block non 'uploaded' status on create)
@@ -31,6 +32,8 @@ const FirstUploadWizard: React.FC<FirstUploadWizardProps> = ({
   const [currentStep, setCurrentStep] = useState<WizardStep>('welcome');
   const [processingAnimation, setProcessingAnimation] = useState(0);
   const [isLoadingSampleData, setIsLoadingSampleData] = useState(false);
+  // Fallback falls parent state nicht korrekt aktualisiert -> interne Sichtbarkeit steuern
+  const [visible, setVisible] = useState(true);
 
   // Animation for processing step
   useEffect(() => {
@@ -59,8 +62,18 @@ const FirstUploadWizard: React.FC<FirstUploadWizardProps> = ({
     setCurrentStep('processing');
   };
 
+  const safeClose = () => {
+    try {
+      onClose?.();
+    } catch (e) {
+      console.warn('[Wizard] onClose threw error:', e);
+    }
+    setVisible(false);
+  };
+
   const handleFinish = () => {
-    onClose();
+    // Kein Hard-Reload mehr – Dashboard Listener sollten aktualisieren
+    safeClose();
   };
 
   const handleLoadSampleData = async () => {
@@ -118,9 +131,18 @@ const FirstUploadWizard: React.FC<FirstUploadWizardProps> = ({
     }
   ];
 
+  if (!visible) return null;
+
   return (
-    <div className="first-upload-wizard-overlay">
-      <div className="first-upload-wizard">
+    <div className="first-upload-wizard-overlay" onClick={safeClose}>
+      <div className="first-upload-wizard" onClick={(e) => e.stopPropagation()}>
+        <button 
+          className="wizard-close-button"
+      onClick={safeClose}
+          aria-label="Close wizard"
+        >
+          <X size={20} />
+        </button>
         {/* Welcome Step */}
         {currentStep === 'welcome' && (
           <div className="wizard-step welcome-step">
@@ -183,6 +205,7 @@ const FirstUploadWizard: React.FC<FirstUploadWizardProps> = ({
                     className="secondary-button"
                     onClick={handleLoadSampleData}
                     disabled={isLoadingSampleData}
+                    data-testid="load-sample-data"
                   >
                     <Eye size={16} />
                     {isLoadingSampleData ? 'Erstelle Beispieldaten...' : 'Dashboard mit Beispieldaten erkunden'}

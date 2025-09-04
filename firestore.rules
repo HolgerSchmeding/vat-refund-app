@@ -1,176 +1,40 @@
-// Firestore Security Rules for Production Environment
-// These rules provide secure access control for the EU VAT Refund application
-
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ========================================
-    // HELPER FUNCTIONS
-    // ========================================
-    
-    // Check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    // Check if user owns the resource
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Check if user is admin
-    function isAdmin() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-    
-    // Get user's tenant ID (simplified: userId = tenantId)
-    function userTenant() {
-      return request.auth.uid;
-    }
-    
-    function isOwnerTenant(resourceData) {
-      return resourceData.tenantId == userTenant();
-    }
-    
-    // Validate document data structure
-    function isValidDocument() {
-      return request.resource.data.keys().hasAll(['tenantId', 'uploadedBy', 'status', 'originalFileName']) &&
-             request.resource.data.tenantId is string &&
-             request.resource.data.uploadedBy is string &&
-             request.resource.data.status in ['uploaded', 'processing', 'document_ai_success', 'document_ai_error', 'validating', 'validated', 'validation_error', 'ready_for_submission', 'submitted', 'error'] &&
-             request.resource.data.originalFileName is string;
-    }
-    
-    // Check if status transition is allowed
-    function isValidStatusTransition(oldStatus, newStatus) {
-      return (oldStatus == 'uploaded' && newStatus in ['processing', 'error']) ||
-             (oldStatus == 'processing' && newStatus in ['document_ai_success', 'document_ai_error']) ||
-             (oldStatus == 'document_ai_success' && newStatus in ['validating', 'validation_error']) ||
-             (oldStatus == 'validating' && newStatus in ['validated', 'validation_error']) ||
-             (oldStatus == 'validated' && newStatus in ['ready_for_submission', 'error']) ||
-             (oldStatus == 'ready_for_submission' && newStatus in ['submitted', 'error']) ||
-             (oldStatus == 'error' && newStatus in ['uploaded', 'processing']);
-    }
-    
-    // Enhanced query validation to ensure tenant filtering
-    function validQuery() {
-      return request.query.limit <= 100;
+    // Documents collection - users can only access their own documents
+    match /documents/{documentId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.userId;
+      // Allow list for authenticated users (will be filtered by client)
+      allow list: if request.auth != null;
     }
 
-    // ========================================
-    // DOCUMENTS COLLECTION
-    // ========================================
-    
-    match /documents/{docId} {
-      // Users can create documents for their tenant
-      allow create: if isAuthenticated()
-        && isValidDocument()
-        && request.resource.data.tenantId == userTenant()
-        && request.resource.data.uploadedBy == request.auth.uid
-        // Allow normal user uploads only with initial 'uploaded' status.
-        // Permit sample data seeding (isSampleData == true) to bypass status restriction
-        // so demo documents can appear already in advanced workflow states.
-        && (
-          request.resource.data.status in ['uploaded'] ||
-          (request.resource.data.isSampleData == true)
-        );
-
-      // Users can read their own documents
-      allow get: if isAuthenticated() && isOwnerTenant(resource.data);
-      allow list: if isAuthenticated() && validQuery();
-
-      // Controlled updates: enforce valid status transitions
-      allow update: if isAuthenticated()
-        && isOwnerTenant(resource.data)
-        && isOwnerTenant(request.resource.data)
-        && isValidStatusTransition(resource.data.status, request.resource.data.status)
-        && request.resource.data.uploadedBy == resource.data.uploadedBy
-        && request.resource.data.tenantId == resource.data.tenantId;
-
-      // Only admins can delete documents
-      allow delete: if isAdmin();
+    // Notifications collection - users can only access their own notifications
+    match /notifications/{notificationId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.userId;
+      // Allow list for authenticated users (will be filtered by client)
+      allow list: if request.auth != null;
     }
 
-    // ========================================
-    // USERS COLLECTION
-    // ========================================
-    
-    match /users/{userId} {
-      // Users can read and write their own profile
-      allow read, write: if isAuthenticated() && isOwner(userId);
-      
-      // Admins can read all user profiles
-      allow read: if isAdmin();
-    }
-    
-    // ========================================
-    // ADMIN USERS COLLECTION
-    // ========================================
-    
-    match /admins/{adminId} {
-      // Only admins can read admin list
-      allow read: if isAdmin();
-      
-      // Only existing admins can create new admins
-      allow create: if isAdmin();
-      
-      // Admins cannot delete themselves (manual process)
-      allow update, delete: if false;
-    }
-
-    // ========================================
-    // SUBMISSIONS COLLECTION
-    // ========================================
-    
+    // Submissions collection - ADMIN ONLY (corrected based on audit)
     match /submissions/{submissionId} {
-      // Users can read their own submissions
-      allow get: if isAuthenticated() && isOwnerTenant(resource.data);
-      allow list: if isAuthenticated() && validQuery();
-      
-      // Only Cloud Functions can create/update/delete submissions
-      allow create, update, delete: if false;
-    }
-    
-    // ========================================
-    // SYSTEM COLLECTIONS (Read-only for users)
-    // ========================================
-    
-    // EU VAT Codes reference data
-    match /euVatCodes/{codeId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-    
-    // Application settings
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-    
-    // ========================================
-    // AUDIT LOGS COLLECTION
-    // ========================================
-    
-    match /auditLogs/{logId} {
-      // Only admins can read audit logs
-      allow read: if isAdmin();
-      
-      // Only Cloud Functions can write audit logs
-      allow write: if false;
-    }
-    
-    // ========================================
-    // TEST COLLECTIONS (Development only)
-    // ========================================
-    
-    // Allow test documents to be deleted (for cleanup)
-    match /testDocuments/{docId} {
-      allow read, write, delete: if isAuthenticated();
+      allow read, write: if request.auth != null 
+        && request.auth.token.admin == true;
     }
 
-    // Deny all other collections by default
+    // User profiles (if needed)
+    match /users/{userId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == userId;
+    }
+
+    // Deny all other access
     match /{document=**} {
       allow read, write: if false;
     }

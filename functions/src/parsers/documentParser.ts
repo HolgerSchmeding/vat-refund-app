@@ -62,15 +62,15 @@ export interface ExtractedDocumentData {
  * Falls back to NaN if parsing fails.
  */
 export function parseCurrency(value: string): number {
-  if (!value || typeof value !== 'string') return NaN;
-  
+  if (!value || typeof value !== "string") return NaN;
+
   // Remove multiple currency symbols and extra spaces
   let cleaned = value.replace(/[€$£¥₹\s]+/g, "").trim();
-  
+
   // Handle negative signs
-  const isNegative = cleaned.includes('-');
+  const isNegative = cleaned.includes("-");
   cleaned = cleaned.replace(/[-]/g, "");
-  
+
   // Detect format based on patterns
   if (/^\d{1,3}(\.\d{3})*,\d{2}$/.test(cleaned)) {
     // European format: 1.234.567,89 (dot as thousands, comma as decimal)
@@ -91,7 +91,7 @@ export function parseCurrency(value: string): number {
     // Fallback: remove all commas, keep dots
     cleaned = cleaned.replace(/,/g, "");
   }
-  
+
   const n = parseFloat(cleaned);
   return isNaN(n) ? NaN : (isNegative ? -n : n);
 }
@@ -106,14 +106,14 @@ export function parseLineItem(text: string): ParsedLineItem {
     netAmount: 0,
     vatRate: 0,
     vatAmount: 0,
-    totalAmount: 0
+    totalAmount: 0,
   };
 
   // Extract amounts using regex patterns that handle both € and $ formats
   const amountPattern = /[€$](\d+[\.,]?\d*)/g;
-  const amounts = [...text.matchAll(amountPattern)].map(match => 
+  const amounts = [...text.matchAll(amountPattern)].map((match) =>
     parseCurrency(match[0])
-  ).filter(amount => !isNaN(amount));
+  ).filter((amount) => !isNaN(amount));
 
   // Extract VAT rate
   const vatRatePattern = /(\d+)%\s*VAT/i;
@@ -150,11 +150,11 @@ export function parseDocumentAIEntities(
 ): ExtractedDocumentData {
   logger.info(
     "Starting to parse Document AI entities.",
-    { filePath, entityCount: document.entities.length }
+    {filePath, entityCount: document.entities.length}
   );
 
   if (!document || !document.entities) {
-    logger.error("Document AI did not return any entities.", { filePath });
+    logger.error("Document AI did not return any entities.", {filePath});
     throw new Error("No entities found in Document AI response");
   }
 
@@ -172,7 +172,7 @@ export function parseDocumentAIEntities(
 
   // Initialize extracted data structure
   const extractedData: ExtractedDocumentData = {
-    lineItems: []
+    lineItems: [],
   };
 
   // Map key fields from entities
@@ -183,78 +183,78 @@ export function parseDocumentAIEntities(
     if (!entityType) continue; // Skip entities without type, but allow empty text
 
     switch (entityType) {
-      case "invoice_id":
-        extractedData.invoiceId = entityText;
-        break;
-        
-      case "invoice_date":
-        extractedData.invoiceDate = entityText;
-        break;
-        
-      case "total_amount": {
-        const parsed = parseCurrency(entityText);
-        extractedData.totalAmount = parsed; // Keep NaN if parsing fails
-        break;
+    case "invoice_id":
+      extractedData.invoiceId = entityText;
+      break;
+
+    case "invoice_date":
+      extractedData.invoiceDate = entityText;
+      break;
+
+    case "total_amount": {
+      const parsed = parseCurrency(entityText);
+      extractedData.totalAmount = parsed; // Keep NaN if parsing fails
+      break;
+    }
+
+    case "currency":
+      extractedData.currency = entityText;
+      break;
+
+    case "supplier_name":
+      extractedData.supplierName = entityText;
+      break;
+
+    case "net_amount": {
+      const parsed = parseCurrency(entityText);
+      extractedData.netAmount = parsed; // Keep NaN if parsing fails
+      break;
+    }
+
+    case "vat_amount": {
+      const parsed = parseCurrency(entityText);
+      extractedData.vatAmount = parsed; // Keep NaN if parsing fails
+      break;
+    }
+
+    case "line_item": {
+      // Parse line item text and store as structured data
+      const lineItem = parseLineItem(entityText);
+      extractedData.lineItems.push({
+        originalText: entityText,
+        description: lineItem.description,
+        netAmount: lineItem.netAmount,
+        vatRate: lineItem.vatRate,
+        vatAmount: lineItem.vatAmount,
+        totalAmount: lineItem.totalAmount,
+        // Will be populated by validation function
+        isRefundable: null,
+        refundableVatAmount: null,
+        euSubCode: null,
+        validationNotes: null,
+      });
+      break;
+    }
+
+    default: {
+      // Store other entities in a general object
+      if (!extractedData.otherFields) {
+        extractedData.otherFields = {};
       }
-      
-      case "currency":
-        extractedData.currency = entityText;
-        break;
-        
-      case "supplier_name":
-        extractedData.supplierName = entityText;
-        break;
-        
-      case "net_amount": {
-        const parsed = parseCurrency(entityText);
-        extractedData.netAmount = parsed; // Keep NaN if parsing fails
-        break;
-      }
-      
-      case "vat_amount": {
-        const parsed = parseCurrency(entityText);
-        extractedData.vatAmount = parsed; // Keep NaN if parsing fails
-        break;
-      }
-      
-      case "line_item": {
-        // Parse line item text and store as structured data
-        const lineItem = parseLineItem(entityText);
-        extractedData.lineItems.push({
-          originalText: entityText,
-          description: lineItem.description,
-          netAmount: lineItem.netAmount,
-          vatRate: lineItem.vatRate,
-          vatAmount: lineItem.vatAmount,
-          totalAmount: lineItem.totalAmount,
-          // Will be populated by validation function
-          isRefundable: null,
-          refundableVatAmount: null,
-          euSubCode: null,
-          validationNotes: null
-        });
-        break;
-      }
-      
-      default: {
-        // Store other entities in a general object
-        if (!extractedData.otherFields) {
-          extractedData.otherFields = {};
-        }
-        extractedData.otherFields[entityType] = entityText;
-        break;
-      }
+      extractedData.otherFields[entityType] = entityText;
+      break;
+    }
     }
   }
 
   logger.info(
     "Successfully parsed Document AI entities.",
-    { 
+    {
       filePath,
       invoiceId: extractedData.invoiceId,
       supplierName: extractedData.supplierName,
       totalAmount: extractedData.totalAmount,
-      lineItemCount: extractedData.lineItems.length
+      lineItemCount: extractedData.lineItems.length,
     }
   );
 

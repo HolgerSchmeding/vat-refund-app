@@ -1,0 +1,42 @@
+/* ProgressLogo.css */
+
+.progress-logo {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.progress-logo:hover {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+
+.progress-logo svg {
+  display: block;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .progress-logo {
+    width: 100px !important;
+    height: 32px !important;
+  }
+  
+  .progress-logo svg {
+    width: 100px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .progress-logo {
+    width: 80px !important;
+    height: 28px !important;
+  }
+  
+  .progress-logo svg {
+    width: 80px;
+    height: 28px;
+  }
+}

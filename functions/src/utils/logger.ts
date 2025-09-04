@@ -4,14 +4,14 @@
  */
 
 import * as logger from "firebase-functions/logger";
-import { v4 as uuidv4 } from "uuid";
+import {v4 as uuidv4} from "uuid";
 
 /**
  * Log levels for structured logging
  */
 export enum LogLevel {
   DEBUG = "debug",
-  INFO = "info", 
+  INFO = "info",
   WARN = "warn",
   ERROR = "error"
 }
@@ -53,7 +53,7 @@ export class StructuredLogger {
   private context: LogContext;
 
   constructor(context: LogContext) {
-    this.context = { ...context };
+    this.context = {...context};
   }
 
   /**
@@ -64,9 +64,9 @@ export class StructuredLogger {
     const context: LogContext = {
       correlationId,
       functionName,
-      ...additionalContext
+      ...additionalContext,
     };
-    
+
     return new StructuredLogger(context);
   }
 
@@ -76,7 +76,7 @@ export class StructuredLogger {
   child(additionalContext: Partial<LogContext>): StructuredLogger {
     const childContext = {
       ...this.context,
-      ...additionalContext
+      ...additionalContext,
     };
     return new StructuredLogger(childContext);
   }
@@ -87,7 +87,7 @@ export class StructuredLogger {
   updateContext(additionalContext: Partial<LogContext>): void {
     this.context = {
       ...this.context,
-      ...additionalContext
+      ...additionalContext,
     };
   }
 
@@ -106,14 +106,14 @@ export class StructuredLogger {
       timestamp: new Date().toISOString(),
       level,
       message,
-      context: { ...this.context }
+      context: {...this.context},
     };
 
     if (error) {
       entry.error = {
         message: error.message,
         stack: error.stack,
-        code: (error as any).code
+        code: (error as any).code,
       };
     }
 
@@ -126,7 +126,7 @@ export class StructuredLogger {
   debug(message: string, additionalContext?: Record<string, any>): void {
     const entry = this.createLogEntry(LogLevel.DEBUG, message);
     if (additionalContext) {
-      entry.context = { ...entry.context, ...additionalContext };
+      entry.context = {...entry.context, ...additionalContext};
     }
     logger.debug(entry);
   }
@@ -137,7 +137,7 @@ export class StructuredLogger {
   info(message: string, additionalContext?: Record<string, any>): void {
     const entry = this.createLogEntry(LogLevel.INFO, message);
     if (additionalContext) {
-      entry.context = { ...entry.context, ...additionalContext };
+      entry.context = {...entry.context, ...additionalContext};
     }
     logger.info(entry);
   }
@@ -148,7 +148,7 @@ export class StructuredLogger {
   warn(message: string, additionalContext?: Record<string, any>): void {
     const entry = this.createLogEntry(LogLevel.WARN, message);
     if (additionalContext) {
-      entry.context = { ...entry.context, ...additionalContext };
+      entry.context = {...entry.context, ...additionalContext};
     }
     logger.warn(entry);
   }
@@ -159,7 +159,7 @@ export class StructuredLogger {
   error(message: string, error?: Error, additionalContext?: Record<string, any>): void {
     const entry = this.createLogEntry(LogLevel.ERROR, message, error);
     if (additionalContext) {
-      entry.context = { ...entry.context, ...additionalContext };
+      entry.context = {...entry.context, ...additionalContext};
     }
     logger.error(entry);
   }
@@ -169,12 +169,12 @@ export class StructuredLogger {
    */
   startFunction(additionalContext?: Record<string, any>): { startTime: number } {
     const startTime = Date.now();
-    this.info(`🚀 Function started`, {
+    this.info("🚀 Function started", {
       status: "started",
       startTime,
-      ...additionalContext
+      ...additionalContext,
     });
-    return { startTime };
+    return {startTime};
   }
 
   /**
@@ -183,12 +183,12 @@ export class StructuredLogger {
   endFunction(startTime: number, additionalContext?: Record<string, any>): void {
     const endTime = Date.now();
     const duration = endTime - startTime;
-    
-    this.info(`✅ Function completed`, {
+
+    this.info("✅ Function completed", {
       status: "completed",
       endTime,
       duration,
-      ...additionalContext
+      ...additionalContext,
     });
   }
 
@@ -198,12 +198,12 @@ export class StructuredLogger {
   failFunction(startTime: number, error: Error, additionalContext?: Record<string, any>): void {
     const endTime = Date.now();
     const duration = endTime - startTime;
-    
-    this.error(`❌ Function failed`, error, {
+
+    this.error("❌ Function failed", error, {
       status: "failed",
       endTime,
       duration,
-      ...additionalContext
+      ...additionalContext,
     });
   }
 
@@ -213,7 +213,7 @@ export class StructuredLogger {
   step(stepName: string, additionalContext?: Record<string, any>): void {
     this.info(`📋 ${stepName}`, {
       step: stepName,
-      ...additionalContext
+      ...additionalContext,
     });
   }
 
@@ -224,7 +224,7 @@ export class StructuredLogger {
     this.info(`🌐 External service call: ${serviceName}.${operation}`, {
       service: serviceName,
       operation,
-      ...additionalContext
+      ...additionalContext,
     });
   }
 
@@ -235,7 +235,7 @@ export class StructuredLogger {
     this.info(`💾 Data ${operation}: ${collection}`, {
       dataOperation: operation,
       collection,
-      ...additionalContext
+      ...additionalContext,
     });
   }
 }
@@ -256,7 +256,7 @@ export class LogHelpers {
    * Extract file name from path
    */
   static extractFileName(filePath: string): string {
-    return filePath.split('/').pop() || filePath;
+    return filePath.split("/").pop() || filePath;
   }
 
   /**
@@ -267,7 +267,7 @@ export class LogHelpers {
       filePath,
       fileName: LogHelpers.extractFileName(filePath),
       bucket,
-      userId: LogHelpers.extractUserIdFromPath(filePath)
+      userId: LogHelpers.extractUserIdFromPath(filePath),
     };
   }
 
@@ -278,7 +278,7 @@ export class LogHelpers {
     return {
       documentPath,
       documentId,
-      collection: documentPath.split('/')[0]
+      collection: documentPath.split("/")[0],
     };
   }
 
@@ -286,17 +286,17 @@ export class LogHelpers {
    * Sanitize sensitive data for logging
    */
   static sanitizeForLogging(data: any): any {
-    const sanitized = { ...data };
-    
+    const sanitized = {...data};
+
     // Remove or mask sensitive fields
-    const sensitiveFields = ['password', 'apiKey', 'token', 'secret', 'key'];
-    
+    const sensitiveFields = ["password", "apiKey", "token", "secret", "key"];
+
     for (const field of sensitiveFields) {
       if (sanitized[field]) {
-        sanitized[field] = '***REDACTED***';
+        sanitized[field] = "***REDACTED***";
       }
     }
-    
+
     return sanitized;
   }
 }

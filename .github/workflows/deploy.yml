@@ -154,6 +154,40 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
+    
+    # ========================================
+    # 🚨 KRITISCHER SCHRITT: PRODUKTIONS-VALIDIERUNG
+    # ========================================
+    - name: 🔍 Validate Production Configuration  
+      run: |
+        echo "🔍 Validiere Produktions-Konfiguration..."
+        echo "Prüfe .env.production auf Placeholder-Werte..."
+        
+        # Prüfe ob .env.production existiert
+        if [ ! -f ".env.production" ]; then
+          echo "❌ FEHLER: .env.production nicht gefunden!"
+          echo "Erstellen Sie die Datei mit echten Firebase-Credentials."
+          exit 1
+        fi
+        
+        # Prüfe auf kritische Placeholder-Werte
+        if grep -q "your-messaging-sender-id\|your-app-id\|YOUR_REAL_" .env.production; then
+          echo "❌ DEPLOYMENT GESTOPPT!"
+          echo "🚨 .env.production enthält noch Placeholder-Werte:"
+          grep -n "your-messaging-sender-id\|your-app-id\|YOUR_REAL_" .env.production || true
+          echo ""
+          echo "Ersetzen Sie alle Placeholder mit echten Firebase-Credentials!"
+          echo "Anleitung: Siehe PRODUCTION_SETUP.md"
+          exit 1
+        fi
+        
+        # Node.js Validator ausführen (falls verfügbar)
+        if [ -f "scripts/validate-production.js" ]; then
+          echo "🔍 Führe erweiterte Validierung aus..."
+          node scripts/validate-production.js
+        fi
+        
+        echo "✅ Produktions-Konfiguration validiert!"
         
     - name: 📥 Download Frontend Build Artifacts
       uses: actions/download-artifact@v4

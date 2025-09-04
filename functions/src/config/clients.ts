@@ -3,10 +3,10 @@
  * Prevents emulator timeouts by avoiding heavy client initialization in global scope.
  */
 
-import { App, initializeApp } from "firebase-admin/app";
-import { getStorage, Storage } from "firebase-admin/storage";
-import { getFirestore, Firestore } from "firebase-admin/firestore";
-import { getAppConfig, ConfigSections } from "./env";
+import {App, initializeApp} from "firebase-admin/app";
+import {getStorage, Storage} from "firebase-admin/storage";
+import {getFirestore, Firestore} from "firebase-admin/firestore";
+import {getAppConfig, ConfigSections} from "./env";
 
 // Lazy imports for heavy Google Cloud SDKs - imported only when needed
 // import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
@@ -49,8 +49,8 @@ export function getAdminFirestore(): Firestore {
 export function getDocAiClient(): any {
   if (!_docAiClient) {
     // Lazy import to avoid loading heavy SDK at module level
-    const { DocumentProcessorServiceClient } = require("@google-cloud/documentai");
-    
+    const {DocumentProcessorServiceClient} = require("@google-cloud/documentai");
+
     const docAiConfig = ConfigSections.documentAi();
     const clientOptions = {
       apiEndpoint: docAiConfig.apiEndpoint,
@@ -66,8 +66,8 @@ export function getDocAiClient(): any {
 export function getVertexAI(): any {
   if (!_vertexAI) {
     // Lazy import to avoid loading heavy SDK at module level
-    const { VertexAI } = require("@google-cloud/vertexai");
-    
+    const {VertexAI} = require("@google-cloud/vertexai");
+
     const vertexConfig = ConfigSections.vertexAi();
     _vertexAI = new VertexAI({
       project: vertexConfig.project,
@@ -83,14 +83,14 @@ export function getVertexAI(): any {
  */
 export function getSendGrid() {
   const config = getAppConfig();
-  
+
   if (!_sendGridInitialized) {
     // Lazy import to avoid loading heavy SDK at module level
     const sgMail = require("@sendgrid/mail");
     sgMail.setApiKey(config.sendGridApiKey);
     _sendGridInitialized = true;
   }
-  
+
   // Return fresh import each time since we don't cache the instance
   const sgMail = require("@sendgrid/mail");
   return sgMail;

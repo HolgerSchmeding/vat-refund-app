@@ -15,6 +15,9 @@ import DocumentList from '../components/DocumentList';
 import SubmissionGenerator from '../components/SubmissionGenerator';
 import InvoiceUploader from '../components/InvoiceUploader';
 import FirstUploadWizard from '../components/FirstUploadWizard';
+import { NotificationBell } from '../components/NotificationBell';
+import { NotificationTester } from '../components/NotificationTester';
+import { ProgressLogo } from '../components/ProgressLogo';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -23,11 +26,18 @@ export default function Dashboard() {
   const { submissions, loading: submissionsLoading } = useSubmissions();
   const metrics = useDashboardMetrics();
   const [activeTab, setActiveTab] = useState<'documents' | 'submissions'>('documents');
+
+  // Debug logging
+  console.log('🔍 Dashboard: Current user:', user?.uid);
+  console.log('🔍 Dashboard: Documents loading:', documentsLoading);
+  console.log('🔍 Dashboard: Documents count:', documents.length);
+  console.log('🔍 Dashboard: Documents:', documents);
   const [showFirstUploadWizard, setShowFirstUploadWizard] = useState(false);
 
   // Check if user is new (no documents and no dismissed wizard)
+  // Only auto-show wizard for completely new users
   const isNewUser = !documentsLoading && documents.length === 0 && 
-    !localStorage.getItem(`wizard-dismissed-${user?.uid}`);
+    !localStorage.getItem(`wizard-auto-dismissed-${user?.uid}`);
 
   const handleLogout = async () => {
     try {
@@ -39,8 +49,9 @@ export default function Dashboard() {
 
   const handleWizardClose = () => {
     setShowFirstUploadWizard(false);
-    if (user?.uid) {
-      localStorage.setItem(`wizard-dismissed-${user.uid}`, 'true');
+    // Only set auto-dismiss for automatic wizard, not manual triggers
+    if (isNewUser && user?.uid) {
+      localStorage.setItem(`wizard-auto-dismissed-${user.uid}`, 'true');
     }
   };
 
@@ -79,17 +90,24 @@ export default function Dashboard() {
       <header className="dashboard-header">
         <div className="header-content">
           <div className="header-left">
-            <h1>VAT Refund Dashboard</h1>
-            <p>Welcome back, {user?.email}</p>
+            <ProgressLogo />
+            <div className="header-title">
+              <h1>VAT Refund Dashboard</h1>
+              <p>Welcome back, {user?.email}</p>
+            </div>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="logout-button"
-            title="Sign out"
-          >
-            <LogOut size={20} />
-            Sign Out
-          </button>
+          <div className="header-right">
+            <NotificationTester />
+            <NotificationBell />
+            <button 
+              onClick={handleLogout}
+              className="logout-button"
+              title="Sign out"
+            >
+              <LogOut size={20} />
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 

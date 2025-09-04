@@ -1,8 +1,8 @@
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {Document, Tenant} from "./models/types";
-import { getAdminFirestore, getVertexAI, getSendGrid } from "./config/clients";
-import { createLogger, LogHelpers } from "./utils/logger";
-import { DocumentStatus } from "./types/DocumentStatus";
+import {getAdminFirestore, getVertexAI, getSendGrid} from "./config/clients";
+import {createLogger, LogHelpers} from "./utils/logger";
+import {DocumentStatus} from "./types/DocumentStatus";
 
 /**
  * Cloud Function that triggers when a document is updated.
@@ -30,11 +30,11 @@ export const requestAddressCorrection = onDocumentUpdated(
       }
 
       // Only proceed if status changed to validation_error
-      if (afterData.status !== DocumentStatus.VALIDATION_ERROR || 
+      if (afterData.status !== DocumentStatus.VALIDATION_ERROR ||
           beforeData.status === DocumentStatus.VALIDATION_ERROR) {
         structuredLogger.info("Not a new validation error - skipping", {
           beforeStatus: beforeData.status,
-          afterStatus: afterData.status
+          afterStatus: afterData.status,
         });
         structuredLogger.endFunction(timing.startTime);
         return;
@@ -95,10 +95,9 @@ export const requestAddressCorrection = onDocumentUpdated(
       console.log(`Address correction email sent successfully for document ${documentId}`);
       structuredLogger.step("Address correction completed successfully");
       structuredLogger.endFunction(timing.startTime);
-
     } catch (error) {
       structuredLogger.failFunction(timing.startTime, error as Error);
-      
+
       // Update document with error information
       const db = getAdminFirestore();
       await db.collection("documents").doc(event.params.documentId).update({
@@ -119,11 +118,11 @@ function isAddressValidationError(document: Document): boolean {
 
   const errorMessage = document.errorDetails?.message || document.validationError || "";
   const addressKeywords = [
-    "address", "adresse", "recipient", "empfänger", 
-    "billing", "rechnung", "incorrect", "falsch"
+    "address", "adresse", "recipient", "empfänger",
+    "billing", "rechnung", "incorrect", "falsch",
   ];
 
-  return addressKeywords.some(keyword => 
+  return addressKeywords.some((keyword) =>
     errorMessage.toLowerCase().includes(keyword.toLowerCase())
   );
 }
@@ -150,14 +149,14 @@ async function getTenantInfo(tenantId: string): Promise<Tenant | null> {
  */
 function extractSupplierInfo(document: Document): {name: string; email: string} {
   const extractedData = document.extractedData as any;
-  
+
   return {
-    name: extractedData?.supplier_name || 
-          extractedData?.vendor_name || 
-          extractedData?.company_name || 
+    name: extractedData?.supplier_name ||
+          extractedData?.vendor_name ||
+          extractedData?.company_name ||
           "Sehr geehrte Damen und Herren",
-    email: extractedData?.supplier_email || 
-           extractedData?.vendor_email || 
+    email: extractedData?.supplier_email ||
+           extractedData?.vendor_email ||
            extractedData?.contact_email || "",
   };
 }
@@ -167,9 +166,9 @@ function extractSupplierInfo(document: Document): {name: string; email: string} 
  */
 function extractInvoiceId(document: Document): string {
   const extractedData = document.extractedData as any;
-  return extractedData?.invoice_number || 
-         extractedData?.invoice_id || 
-         extractedData?.document_number || 
+  return extractedData?.invoice_number ||
+         extractedData?.invoice_id ||
+         extractedData?.document_number ||
          "N/A";
 }
 
@@ -178,10 +177,10 @@ function extractInvoiceId(document: Document): string {
  */
 function extractInvoiceDate(document: Document): string {
   const extractedData = document.extractedData as any;
-  const date = extractedData?.invoice_date || 
-               extractedData?.document_date || 
+  const date = extractedData?.invoice_date ||
+               extractedData?.document_date ||
                extractedData?.date;
-  
+
   if (date) {
     try {
       return new Date(date).toLocaleDateString("de-DE");
@@ -197,10 +196,10 @@ function extractInvoiceDate(document: Document): string {
  */
 function extractIncorrectAddress(document: Document): string {
   const extractedData = document.extractedData as any;
-  const address = extractedData?.recipient_address || 
-                  extractedData?.billing_address || 
+  const address = extractedData?.recipient_address ||
+                  extractedData?.billing_address ||
                   extractedData?.address || "";
-  
+
   if (typeof address === "object") {
     return Object.values(address).join(", ");
   }
@@ -213,11 +212,11 @@ function extractIncorrectAddress(document: Document): string {
 function detectLanguage(document: Document): "de" | "en" {
   const extractedData = document.extractedData as any;
   const text = JSON.stringify(extractedData).toLowerCase();
-  
+
   // Simple German detection based on common words
   const germanWords = ["rechnung", "umsatzsteuer", "mwst", "betrag", "datum", "firma"];
-  const germanMatches = germanWords.filter(word => text.includes(word)).length;
-  
+  const germanMatches = germanWords.filter((word) => text.includes(word)).length;
+
   return germanMatches > 1 ? "de" : "en";
 }
 
@@ -241,7 +240,7 @@ async function generateCorrectionEmail(params: {
 
   const correctAddressString = `${params.correctAddress.street}, ${params.correctAddress.zipCode} ${params.correctAddress.city}, ${params.correctAddress.country}`;
 
-  const prompt = params.language === "de" ? 
+  const prompt = params.language === "de" ?
     `Sie sind ein höflicher Buchhaltungsassistent für die Firma ${params.companyName}.
 
 Erstellen Sie eine professionelle E-Mail an den Lieferanten ${params.supplierName} mit folgenden Informationen:
@@ -284,7 +283,7 @@ Respond in JSON format with:
   try {
     const result = await model.generateContent(prompt);
     const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    
+
     // Parse JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {

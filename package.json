@@ -10,6 +10,8 @@
     "build": "cd functions && npm run build",
     "test": "node test-complete-workflow.js",
     "test:validation": "node test-manual-validation.js",
+    "validate:production": "node scripts/validate-production.js",
+    "predeploy": "npm run validate:production",
     "logs": "firebase functions:log",
     "clean": "cd functions && rm -rf lib node_modules && npm install"
   },

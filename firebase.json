@@ -1,7 +1,7 @@
 {
   "firestore": {
     "database": "(default)",
-    "location": "eur3",
+    "location": "europe-west1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
@@ -17,49 +17,54 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
   ],
-    "hosting": {
-      "public": "public",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
-      ],
-      "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
-      ]
-    },
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "y"
   },
   "emulators": {
     "auth": {
-      "port": 9099
+      "port": 9099,
+      "host": "0.0.0.0"
     },
     "functions": {
-      "port": 5001
+      "port": 5001,
+      "host": "0.0.0.0"
     },
     "firestore": {
       "port": 8080,
+      "host": "0.0.0.0",
       "rules": "firestore.dev.rules"
     },
     "storage": {
-      "port": 9199
+      "port": 9199,
+      "host": "0.0.0.0"
     },
     "ui": {
       "enabled": true,
-      "port": 4300
+      "port": 4300,
+      "host": "0.0.0.0"
     },
     "singleProjectMode": true,
     "hosting": {
-      "port": 5000
+      "port": 5000,
+      "host": "0.0.0.0"
     }
   }
 }

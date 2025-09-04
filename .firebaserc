@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "demo-vat-refund-app"
-  }
+    "default": "vat-refund-app-2025",
+    "y": "vat-refund-app-2025"
+  },
+  "targets": {},
+  "etags": {}
 }
