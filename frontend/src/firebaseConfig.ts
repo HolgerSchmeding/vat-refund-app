@@ -5,16 +5,24 @@ import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
-// Your Firebase configuration
-// Production configuration for vat-refund-app-2025
+// Firebase configuration now sourced from environment variables (.env.local)
+// For Vite, all variables must be prefixed with VITE_
 const firebaseConfig = {
-  apiKey: "AIzaSyBN_uC209PVSEsYNee9Y0gv4q-g5E2k6YQ",
-  authDomain: "vat-refund-app-2025.firebaseapp.com",
-  projectId: "vat-refund-app-2025",
-  storageBucket: "vat-refund-app-2025.firebasestorage.app",
-  messagingSenderId: "202816087172",
-  appId: "1:202816087172:web:3d8946d91f2093c7ba8ed1"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
+
+// Basic runtime validation (non-fatal in development, console warning only)
+['apiKey','authDomain','projectId','appId'].forEach((k) => {
+  const val = (firebaseConfig as any)[k];
+  if (!val) {
+    console.warn(`[firebaseConfig] Missing required Firebase config value for ${k}. Check your .env.local file.`);
+  }
+});
 
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig);
